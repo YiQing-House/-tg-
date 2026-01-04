@@ -749,28 +749,107 @@ async def handle_collection_key(client: Client, message: Message, key: str):
             await message.reply_text(f"📁 合集 **{collection['name']}** 还没有文件。")
             return True
         
-        await message.reply_text(
+        status_msg = await message.reply_text(
             f"📁 **{collection['name']}**\n"
-            f"共 {len(files)} 个文件，正在发送..."
+            f"共 {len(files)} 个文件，正在准备下载与解密..."
         )
         
-        for f in files:
-            # 复用下面的发送文件逻辑 (可以抽取成函数，但为了简单这里直接写)
-            # 简化版：合集内目前假设是普通文件? 
-            # 待办: 如果合集里也有加密文件，这里也需要解密逻辑。
-            # 为了兼容性，目前合集里的文件假设还没加密，或者只是转发。
-            # 以后需要统一。这里暂时只处理普通转发。
-            try:
-                 if f["file_id"]:
-                    await client.send_cached_media(
-                        message.chat.id,
-                        f["file_id"],
-                        caption=f["caption"] or ""
-                    )
-            except Exception as e:
-                pass
+        from pyrogram.types import InputMediaPhoto, InputMediaVideo
+        import os
+        import asyncio
+        from services.crypto_utils import decrypt_file
+        import base64
         
-        await message.reply_text(f"✅ 合集 **{collection['name']}** 发送完成！")
+        media_group = []
+        temp_paths = []
+        storage_client = getattr(client, 'storage_client', client) # Fallback to client if storage_client missing
+        
+        for f in files:
+            try:
+                local_path = None
+                is_video = False
+                is_image = False
+                
+                mime = (f.get('mime_type') or "").lower()
+                fname = (f.get('file_name') or "").lower()
+                if mime.startswith('image') or fname.endswith(('.jpg', '.jpeg', '.png', '.webp', '.heic')):
+                    is_image = True
+                elif mime.startswith('video') or fname.endswith(('.mp4', '.mov', '.avi', '.mkv')):
+                    is_video = True
+                
+                # 如果是加密文件或需要作为媒体发送，先下载
+                # 对于加密文件，必须下载解密
+                # 对于非加密媒体，为了确保能作为 InputMedia 发送(特别是原文件是Document时)，建议下载
+                
+                if f.get('is_encrypted'):
+                    enc_msg = await storage_client.get_messages(f["chat_id"], f["message_id"])
+                    if not enc_msg: continue
+                    
+                    try:
+                        dl_path = await storage_client.download_media(enc_msg, file_name=f"temp_col_enc_{f['id']}")
+                        temp_paths.append(dl_path)
+                    except Exception as e:
+                        print(f"Download failed: {e}")
+                        continue
+
+                    if not dl_path: continue
+
+                    dec_path = f"temp_col_dec_{f['id']}_{f['file_name']}"
+                    aes_key = base64.b64decode(f["encryption_key"])
+                    
+                    try:
+                        await asyncio.to_thread(decrypt_file, dl_path, dec_path, aes_key)
+                        local_path = dec_path
+                        temp_paths.append(dec_path)
+                    except Exception as e:
+                        print(f"Decryption failed: {e}")
+                        await message.reply_text(f"❌ 解密失败: {f['file_name']}")
+                        continue
+                        
+                else:
+                    # 非加密，但也下载以确保相册体验
+                    msg = await storage_client.get_messages(f["chat_id"], f["message_id"])
+                    dl_path = await storage_client.download_media(msg, file_name=f"temp_col_plain_{f['id']}")
+                    local_path = dl_path
+                    temp_paths.append(local_path)
+                
+                if not local_path or not os.path.exists(local_path):
+                    continue
+
+                caption = f['caption'] or ""
+                
+                if is_image:
+                    media_group.append(InputMediaPhoto(local_path, caption=caption))
+                elif is_video:
+                    media_group.append(InputMediaVideo(local_path, caption=caption))
+                else:
+                    # 其他文件，清空现有媒体组后单独发送
+                    if media_group:
+                        await client.send_media_group(message.chat.id, media_group)
+                        media_group = []
+                    
+                    await client.send_document(message.chat.id, local_path, caption=caption, file_name=f['file_name'])
+
+                # 满10个发送一组
+                if len(media_group) >= 10:
+                    await client.send_media_group(message.chat.id, media_group)
+                    media_group = []
+            
+            except Exception as e:
+                print(f"Error processing file {f.get('id')}: {e}")
+                # 即使出错也继续处理下一个
+        
+        # 发送剩余媒体
+        if media_group:
+            await client.send_media_group(message.chat.id, media_group)
+            
+        # 清理临时文件
+        for p in temp_paths:
+            if os.path.exists(p):
+                try: os.remove(p)
+                except: pass
+        
+        await status_msg.edit_text(f"✅ 合集 **{collection['name']}** 发送完成！")
         return True
 
     # === 情景2: 是单个文件密钥 ===

@@ -233,15 +233,20 @@ class Database:
         rows = self.cursor.fetchall()
         results = []
         for row in rows:
+            # 0: id, 1: message_id, 2: chat_id, 3: file_id, 4: local_path, 5: storage_mode
+            # 6: file_unique_id, 7: file_name_enc, 8: caption_enc, 9: file_size, 10: mime_type
+            # 11: access_key, 12: is_encrypted, 13: encryption_key
             results.append({
                 "id": row[0],
                 "message_id": row[1],
                 "chat_id": row[2],
                 "file_id": row[3],
-                "file_name": self.decrypt_text(row[5]),
-                "caption": self.decrypt_text(row[6]),
-                "file_size": row[7],
-                "mime_type": row[8]
+                "file_name": self.decrypt_text(row[7]),
+                "caption": self.decrypt_text(row[8]),
+                "file_size": row[9],
+                "mime_type": row[10],
+                "is_encrypted": row[12],
+                "encryption_key": row[13]
             })
         return results
     
