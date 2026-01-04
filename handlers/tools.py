@@ -2234,6 +2234,7 @@ async def sub_start_download_handler(client, message):
         "💡 使用 \"📋 最近对话\" 可以查看频道ID",
         reply_markup=ForceReply(placeholder="例如: -1001234567890 50")
     )
+    message.stop_propagation()
 
 @Client.on_message(filters.regex("☁️ 存储/上传") & filters.private, group=-3)
 async def menu_storage_handler(client, message):
