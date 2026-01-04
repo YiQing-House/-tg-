@@ -833,13 +833,57 @@ async def send_collection_files(client: Client, message: Message, files: list, c
     
     await status_msg.edit_text(f"✅ 合集 **{collection_name}** 发送完成！")
 
+def make_pagination_keyboard(total_pages, current_page, callback_prefix, extra_buttons=None):
+    """
+    生成分页键盘 (10页一组)
+    callback_prefix: 例如 "col_pg_KEY_" (后面接页码)
+    """
+    from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+    buttons = []
+    
+    # 1. 功能按钮 (放在最上面)
+    if extra_buttons:
+        for btn_row in extra_buttons:
+            buttons.append(btn_row)
+
+    # 2. 翻页导航 (Prev/Next)
+    nav_row = []
+    if current_page > 1:
+        nav_row.append(InlineKeyboardButton("⬅️ 上一页", callback_data=f"{callback_prefix}{current_page-1}"))
+    if current_page < total_pages:
+        nav_row.append(InlineKeyboardButton("下一页 ➡️", callback_data=f"{callback_prefix}{current_page+1}"))
+    if nav_row:
+        buttons.append(nav_row)
+        
+    # 3. 页码网格 (10页)
+    # 计算当前显示的10页范围 (例如 Page 1 -> 1-10)
+    start_num = ((current_page - 1) // 10) * 10 + 1
+    end_num = min(start_num + 9, total_pages)
+    
+    page_buttons = []
+    row = []
+    for p in range(start_num, end_num + 1):
+        # 高亮当前页
+        text = f"· {p} ·" if p == current_page else str(p)
+        row.append(InlineKeyboardButton(text, callback_data=f"{callback_prefix}{p}"))
+        if len(row) == 5:
+            page_buttons.append(row)
+            row = []
+    if row:
+        page_buttons.append(row)
+            
+    buttons.extend(page_buttons)
+            
+    return InlineKeyboardMarkup(buttons)
+
 async def show_collection_page(client, message, collection, files, page=1, is_callback=False):
-    """显示合集分页菜单"""
+    """显示合集的分页内容 (Smart Pagination)"""
+    from pyrogram.types import InlineKeyboardButton
+    
     per_page = 10
     total_files = len(files)
     total_pages = max(1, (total_files + per_page - 1) // per_page)
     
-    # 修正 page 范围
     if page < 1: page = 1
     if page > total_pages: page = total_pages
     
@@ -847,44 +891,42 @@ async def show_collection_page(client, message, collection, files, page=1, is_ca
     end_idx = start_idx + per_page
     page_files = files[start_idx:end_idx]
     
+    # 1. 构建文本内容
     text = f"📁 **{collection['name']}**\n"
-    text += f"📊 共 {total_files} 个文件 | 第 {page}/{total_pages} 页\n\n"
+    text += f"📊 共 {total_files} 个文件 (第 {page}/{total_pages} 页)\n"
+    text += f"-------------------------\n"
     
-    for i, f in enumerate(page_files, start=start_idx+1):
-        fname = f['file_name'] or "未知文件"
-        if len(fname) > 25: fname = fname[:22] + "..."
-        # 图标
+    for i, f in enumerate(page_files):
+        idx = start_idx + i + 1
+        f_name = f.get('file_name') or "未知文件"
+        # 简单截断文件名
+        if len(f_name) > 20:
+             f_name = f_name[:10] + "..." + f_name[-7:]
+        
         icon = "📄"
         mime = (f.get('mime_type') or "").lower()
-        if "image" in mime: icon = "🖼️"
-        elif "video" in mime: icon = "📹"
-        text += f"{i}. {icon} {fname}\n"
+        if 'video' in mime: icon = "🎬"
+        elif 'image' in mime: icon = "🖼️"
+        elif 'audio' in mime: icon = "🎵"
         
-    text += "\n💡 Telegram 限制每次只能发 10 张图，请分批提取。"
-    
-    buttons = []
-    # 按钮1: 发送本页
-    buttons.append([InlineKeyboardButton(
-        f"⬇️ 发送本页 ({len(page_files)}个)", 
-        callback_data=f"col_dl_{collection['access_key']}_{page}"
-    )])
-    
-    # 按钮2: 翻页
-    nav = []
-    if page > 1:
-        nav.append(InlineKeyboardButton("⬅️ 上一页", callback_data=f"col_pg_{collection['access_key']}_{page-1}"))
-    if page < total_pages:
-        nav.append(InlineKeyboardButton("下一页 ➡️", callback_data=f"col_pg_{collection['access_key']}_{page+1}"))
-    if nav:
-        buttons.append(nav)
+        text += f"{idx}. {icon} `{f_name}`\n"
         
-    # 按钮3: 发送全部
-    buttons.append([InlineKeyboardButton(
-        f"🚀 发送全部 ({total_files}个 - 慎点)", 
-        callback_data=f"col_all_{collection['access_key']}"
-    )])
+    text += f"-------------------------\n"
+    text += f"🔑 提取码: `{collection['access_key']}`"
+
+    # 2. 构建按钮 (使用 Smart Pagination)
+    extra_btns = []
+    # 发送本页
+    extra_btns.append([InlineKeyboardButton(f"⬇️ 发送本页 ({len(page_files)}个)", callback_data=f"col_dl_{collection['access_key']}_{page}")])
+    # 发送全部 (仅第一页显眼或者是单独一行)
+    extra_btns.append([InlineKeyboardButton(f"🚀 发送全部 ({total_files}个 - 慎点)", callback_data=f"col_all_{collection['access_key']}")])
     
-    keyboard = InlineKeyboardMarkup(buttons)
+    keyboard = make_pagination_keyboard(
+        total_pages, 
+        page, 
+        f"col_pg_{collection['access_key']}_",
+        extra_buttons=extra_btns
+    )
     
     try:
         if is_callback:
@@ -892,8 +934,6 @@ async def show_collection_page(client, message, collection, files, page=1, is_ca
         else:
             await message.reply_text(text, reply_markup=keyboard)
     except: pass
-
-
 async def handle_collection_key(client: Client, message: Message, key: str):
     """通过密钥获取合集文件"""
     from database import db
@@ -994,15 +1034,15 @@ async def end_collecting_mode(client: Client, message: Message):
     )
 
 async def get_collection_picker_keyboard(user_id, file_access_key, page=1):
-    """生成合集选择键盘(支持分页和快速添加)"""
+    """生成合集选择键盘(支持分页和快速添加) - Smart Pagination"""
     from database import db
-    from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+    from pyrogram.types import InlineKeyboardButton
     
     collections = db.get_user_collections(user_id)
     # 按ID倒序（最新的在前）
     collections.sort(key=lambda x: x['id'], reverse=True)
     
-    per_page = 5
+    per_page = 10 # 升级为10个每页
     total_pages = max(1, (len(collections) + per_page - 1) // per_page)
     
     if page < 1: page = 1
@@ -1012,44 +1052,36 @@ async def get_collection_picker_keyboard(user_id, file_access_key, page=1):
     end = start + per_page
     page_items = collections[start:end]
     
-    buttons = []
+    extra_btns = []
     
-    # 快速添加 (Last Used)
-    last_col = user_last_collection.get(user_id)
-    if last_col and page == 1: # 仅第一页显示快速添加
-        # 验证该合集是否还在列表中
-        exists = any(c['id'] == last_col['id'] for c in collections)
-        if exists:
-            buttons.append([InlineKeyboardButton(
-                f"⚡ 快速添加: {last_col['name']}",
-                callback_data=f"addcol_{file_access_key}_{last_col['id']}"
-            )])
+    # 快速添加 (Last Used) - 仅当 page=1 时显示
+    if page == 1:
+        last_col = user_last_collection.get(user_id)
+        if last_col:
+            exists = any(c['id'] == last_col['id'] for c in collections)
+            if exists:
+                extra_btns.append([InlineKeyboardButton(
+                    f"⚡ 快速添加: {last_col['name']}",
+                    callback_data=f"addcol_{file_access_key}_{last_col['id']}"
+                )])
         
+    # 构建当前页集合列表按钮
     for c in page_items:
-        buttons.append([InlineKeyboardButton(
+        extra_btns.append([InlineKeyboardButton(
             f"📁 {c['name']} ({c['file_count']})", 
             callback_data=f"addcol_{file_access_key}_{c['id']}"
         )])
         
-    # 翻页
-    nav = []
-    if page > 1:
-        nav.append(InlineKeyboardButton("⬅️", callback_data=f"pick_pg_{file_access_key}_{page-1}"))
-    if page < total_pages:
-        nav.append(InlineKeyboardButton("➡️", callback_data=f"pick_pg_{file_access_key}_{page+1}"))
-    if nav:
-        buttons.append(nav)
-        
-    buttons.append([InlineKeyboardButton(
-        "➕ 新建合集", 
-        callback_data=f"newcol_{file_access_key}"
-    )])
-    buttons.append([InlineKeyboardButton(
-        "❌ 不添加", 
-        callback_data=f"skipcol_{file_access_key}"
-    )])
+    extra_btns.append([InlineKeyboardButton("➕ 新建合集", callback_data=f"newcol_{file_access_key}")])
+    extra_btns.append([InlineKeyboardButton("❌ 不添加", callback_data=f"skipcol_{file_access_key}")])
     
-    return InlineKeyboardMarkup(buttons)
+    # 使用 Smart Pagination Helper
+    return make_pagination_keyboard(
+        total_pages,
+        page,
+        f"pick_pg_{file_access_key}_",
+        extra_buttons=extra_btns
+    )
 
 @Client.on_message(filters.media & filters.private)
 async def media_handler(client: Client, message: Message):
@@ -1289,13 +1321,37 @@ async def add_to_collection_callback(client: Client, callback: CallbackQuery):
 
 @Client.on_callback_query(filters.regex(r"^pick_pg_"))
 async def picker_pagination_callback(client: Client, callback: CallbackQuery):
+    from database import db
+    import config
+    
     parts = callback.data.split("_")
     access_key = parts[2]
     page = int(parts[3])
     
+    # 1. 获取文件名称以重建文本
+    db.cursor.execute('SELECT file_name FROM files WHERE access_key = ?', (access_key,))
+    row = db.cursor.fetchone()
+    file_name = row[0] if row else "未知文件"
+    
+    # 2. 获取总页数 (用于文本显示) 
+    # 这里有点低效，但为了显示 "Page X/Y" 必须算一次
+    collections = db.get_user_collections(callback.from_user.id)
+    per_page = 10
+    total_pages = max(1, (len(collections) + per_page - 1) // per_page)
+    
+    # 3. 构建文本
+    text = (
+        f"✅ **已加密存储！**\n\n"
+        f"📄 文件: `{file_name}`\n"
+        f"🔑 提取码: `{access_key}`\n\n"
+        f"**添加到哪个合集？** (第 {page}/{total_pages} 页)"
+    )
+    
     keyboard = await get_collection_picker_keyboard(callback.from_user.id, access_key, page)
-    await callback.message.edit_reply_markup(reply_markup=keyboard)
+    
+    await callback.message.edit_text(text, reply_markup=keyboard)
     await callback.answer()
+
 
 @Client.on_callback_query(filters.regex(r"^newcol_"))
 async def new_collection_callback(client: Client, callback: CallbackQuery):
