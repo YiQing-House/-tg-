@@ -2344,8 +2344,8 @@ async def download_state_handler(client, message):
     state = user_interaction_state.get(uid)
     
     # Handle original format: channel_id limit
+    # Handle original format: channel_id limit
     if state == "waiting_dl_id_limit":
-        del user_interaction_state[uid]
         
         parts = message.text.strip().split()
         if len(parts) < 2:
@@ -2358,6 +2358,9 @@ async def download_state_handler(client, message):
         except ValueError:
             await message.reply_text("❌ ID 或数量必须是数字！")
             return
+        
+        # Success! Consume state now
+        del user_interaction_state[uid]
         
         # Use default destination (channel)
         dest = user_download_dest.get(uid, "channel")
