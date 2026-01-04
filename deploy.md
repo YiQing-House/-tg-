@@ -132,9 +132,13 @@ sudo journalctl -u tgvault -f
 ### 准备工作
 1. 登录宝塔面板。
 2. 进入 **文件**，将本地的 `TelegramVault_Deploy.zip` 上传到 `/www/wwwroot/` 目录。
-3. **解压** 压缩包，将解压后的文件夹重命名为 `tg_vault`。
-   - 确保 `bot.py` 在 `/www/wwwroot/tg_vault/bot.py`。
-   - 确保 `requirements.txt` 和 `.env` 都在此目录。
+3. **解压 (关键步骤)**:
+   - 在文件列表中找到 `TelegramVault_Deploy.zip`。
+   - 鼠标右键点击该文件，选择 **解压**。
+   - 点击 **确定**。
+   - 解压后，你会看到一个新的文件夹。请将这个文件夹重命名为 `tg_vault`。
+   - **检查**: 双击进入 `tg_vault`，确保能看到 `bot.py` 这个文件。
+     *(如果 `bot.py` 在更深一层目录，请把它们全选剪切到 `tg_vault` 根目录下)*
 
 ### 第一步：安装 Python环境
 1. 点击左侧 **软件商店**。
