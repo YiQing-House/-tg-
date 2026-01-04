@@ -1,204 +1,114 @@
-# 腾讯云服务器部署指南
+# 🤖 机器人部署与服务器迁移指南
 
-本指南将指导你如何将机器人部署到腾讯云服务器（轻量应用服务器/CVM）。
-
-> **⚠️ 重要提示**
-> 由于 Telegram 的网络封锁，**请务必选择海外地域的服务器**（如：**中国香港**、新加坡、东京、硅谷等）。
-> 如果选择中国内地服务器，你是无法直接连接 Telegram API 的！
-
-## 1. 准备工作
-
-*   一台 **海外地域** 的腾讯云服务器 (推荐 CentOS 7.9 或 Ubuntu 20.04/22.04)。
-*   本地电脑上已经运行成功，并生成了以下关键文件：
-    *   `.env` (配置文件)
-    *   `vault.db` (数据库，包含加密密钥)
-    *   `*.session` (Bot、主号、闲置号的登录凭证)
-
-## 2. 环境安装
-
-登录服务器终端（SSH），根据系统执行命令：
-
-### Ubuntu / Debian
-```bash
-sudo apt update
-sudo apt install python3 python3-pip python3-venv git -y
-```
-
-### CentOS 7.9
-```bash
-sudo yum install python3 python3-pip git -y
-```
-
-## 3. 获取代码
-
-推荐使用 git 拉取代码：
-
-```bash
-cd /home/
-git clone https://github.com/YiQing-House/-tg-.git TelegramVault
-cd TelegramVault
-```
-
-## 4. 上传敏感文件 (关键步骤)
-
-由于 `.env` 和 `session` 文件不在 GitHub 仓库中（为了安全），你需要从本地电脑上传它们。
-
-**推荐使用 FTP 工具 (如 FileZilla, WinSCP) 或 SCP 命令上传以下文件到服务器的 `/home/TelegramVault/` 目录：**
-
-1.  `.env`
-2.  `vault.db`
-3.  `vault_bot.session`
-4.  `vault_user.session`
-5.  `vault_storage.session`
-6.  `vault_storage.session-journal` (如果有)
-
-> **注意**: 如果不上传 session 文件，你在服务器上启动时需要重新输入手机号验证码，这可能因为服务器 IP 变动导致风控。直接上传本地生成的 session 文件最稳妥。
-
-## 5. 安装依赖
-
-```bash
-# 创建虚拟环境 (推荐)
-python3 -m venv venv
-source venv/bin/activate
-
-# 安装依赖
-pip install -r requirements.txt
-pip install python-dotenv  # 确保安装了这个
-```
-
-## 6. 测试运行
-
-先尝试前台运行，观察有无报错：
-
-```bash
-python bot.py
-```
-
-*   如果显示 `Telegram Private Vault is running...` 且无报错，说明成功。
-*   按 `Ctrl + C` 停止运行。
-
-## 7. 设置后台运行 (Systemd 保活)
-
-为了让机器人即使关闭 SSH 也能一直运行，并且开机自启，我们创建 Systemd 服务。
-
-**1. 创建服务文件**
-```bash
-sudo nano /etc/systemd/system/tgvault.service
-```
-
-**2. 粘贴以下内容** (请修改 `User` 和 `WorkingDirectory` 为实际路径)
-
-```ini
-[Unit]
-Description=Telegram Private Vault Bot
-After=network.target
-
-[Service]
-# 修改为你的服务器用户名 (如 root 或 ubuntu)
-User=root
-# 修改为你的项目路径
-WorkingDirectory=/home/TelegramVault
-# 修改为你的 python 路径 (如果有 venv，指向 venv 的 python)
-ExecStart=/home/TelegramVault/venv/bin/python bot.py
-Restart=always
-RestartSec=10
-
-[Install]
-WantedBy=multi-user.target
-```
-
-**3. 启动服务**
-
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable tgvault
-sudo systemctl start tgvault
-```
-
-**4. 查看状态与日志**
-
-```bash
-# 查看状态
-sudo systemctl status tgvault
-
-# 查看实时日志 (排查问题用)
-sudo journalctl -u tgvault -f
-```
-
-## 8. 宝塔面板 (Baota) 傻瓜式部署指南
-
-使用宝塔面板自带的 **Python项目管理器** 插件，无需敲一行命令即可部署。
-
-### 准备工作
-1. 登录宝塔面板。
-2. 进入 **文件**，将本地的 `TelegramVault_Deploy.zip` 上传到 `/www/wwwroot/` 目录。
-3. **解压 (关键步骤)**:
-   - 在文件列表中找到 `TelegramVault_Deploy.zip`。
-   - 鼠标右键点击该文件，选择 **解压**。
-   - 点击 **确定**。
-   - 解压后，你会看到一个新的文件夹。请将这个文件夹重命名为 `tg_vault`。
-   - **检查**: 双击进入 `tg_vault`，确保能看到 `bot.py` 这个文件。
-     *(如果 `bot.py` 在更深一层目录，请把它们全选剪切到 `tg_vault` 根目录下)*
-
-### 第一步：安装 Python环境
-1. 点击左侧 **软件商店**。
-2. 搜索 `Python`。
-3. 找到 **Python项目管理器 2.0** (或 2.5)，点击 **安装**。
-4. 安装完成后，点击 **设置** (或打开插件)。
-5. 点击 **版本管理** -> 选择 **Python 3.9** (或更高版本) -> 点击 **安装**。等待安装完成。
-
-### 第二步：添加项目
-1. 在 Python项目管理器中，点击 **项目管理** -> **添加项目**。
-2. 填写配置：
-   - **项目路径**: 选择 `/www/wwwroot/tg_vault`
-   - **启动文件**: 选择 `bot.py`
-   - **运行端口**: `8080` (如果没有开Web功能可随便填，如 8888)
-   - **Python版本**: 选择刚才安装的 `Python 3.9`
-   - **启动方式**: `python`
-   - **依赖包**: ✅ **勾选 "安装模块依赖"** (它会自动读取 requirements.txt)
-   - **开机启动**: ✅ **勾选**
-3. 点击 **确定**。
-4. 等待几分钟，它会自动安装依赖并启动项目。
-
-> **关于数据库**:
-> 本项目使用 SQLite (`vault.db`)，**不需要** 配置 MySQL 或 Redis。
-> 只要你上传了 `vault.db`，数据就会自动加载。无需额外操作。
->
-> **性能说明**: 
-> SQLite 非常轻量但极其强大，单文件支持 **TB级** 数据。对于私人文件库（存储几十万个文件索引），它的速度通常比 MySQL 更快（因为没有网络延迟）。只有当你每天有成千上万人同时并发上传时，才需要考虑迁移到 MYSQL。
-
-### 第三步：验证运行
-1. 在项目列表中，看到状态显示 **运行中** (绿色播放键)。
-2. 点击右侧的 **日志**。
-3. 如果看到日志输出：
-   ```
-   Telegram Private Vault is running...
-   ```
-   恭喜你，部署成功！机器人已经在后台运行了。
-
-### 常见报错解决
-- **日志显示 `ModuleNotFoundError`**: 说明依赖没装好。
-  - 点击右侧 **模块** -> 手动输入 `pyrogram` 点击添加。
-  - 再手动输入 `tgcrypto` 点击添加。
-  - 重启项目。
-- **日志显示 `Peer id invalid`**: 说明 session 文件有问题。
-  - 请在 **文件** 管理器中，检查 `vault_bot.session` 是否存在且有文件大小。
-  - 如果文件是 0KB 或不存在，请从本地重新上传。
-- **Python 安装失败 (make: *** No targets specified)**:
-  - 这通常是下载的安装包损坏或有缓存冲突。
-  - **解决方法**: 打开宝塔左侧的 **终端**，执行命令清理缓存：
-    ```bash
-    rm -rf /tmp/Python-*
-    ```
-    然后重新去安装 Python。
-
+本指南旨在帮助您将本地开发环境中的机器人完美迁移到 Linux 服务器（如腾讯云、硅谷节点等海外 VPS）上运行。
 
 ---
 
-## 常见问题
+## 📋 部署前准备 (重要)
 
-Q: 报错 `Peer id invalid`？
-A: 你的 `*.session` 文件可能没上传对，或者服务器环境下的 session 缓存丢失。请尝试在本地重新运行一遍同步，把新的 session 文件上传上去。
+由于本项目的安全性设计，敏感信息不会同步到 GitHub。在迁移前，请确保您的本地文件夹中包含以下 **不可或缺** 的文件：
 
-Q: 连接超时 (ConnectionTimeout)？
-A: 检查你的服务器是不是**中国内地**的。内地服务器无法连接 Telegram。你需要换到香港/新加坡节点。
+| 文件名 | 作用 | 迁移建议 |
+| :--- | :--- | :--- |
+| `config.py` | 您的所有 API 密钥和 ID | 必须手动上传 |
+| `vault.db` | **核心数据库**，包含所有文件的加密密钥 | 必须手动上传，否则文件无法解密 |
+| `vault_bot.session` | 机器人的登录凭证 | 推荐上传，免去二次配置 |
+| `vault_user.session` | 管理员账号的登录凭证 | 推荐上传，防止异地登录风控 |
+| `vault_storage.session`| 存储账号的登录凭证 | 推荐上传 |
+
+---
+
+## 🛠️ 第一步：服务器环境初始化
+
+### 1. 更新系统并安装 Python
+建议使用 Ubuntu 20.04+ 或 Debian 系统。
+
+```bash
+sudo apt update && sudo apt upgrade -y
+sudo apt install python3 python3-pip python3-venv git -y
+```
+
+### 2. 获取代码
+```bash
+cd /opt
+sudo git clone https://github.com/YiQing-House/-tg-.git tg_vault
+sudo chown -R $USER:$USER /opt/tg_vault
+cd tg_vault
+```
+
+### 3. 创建虚拟环境并安装依赖
+```bash
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+pip install tgcrypto  # 强烈建议安装，可将解密速度提升 10 倍以上
+```
+
+---
+
+## 📦 第二步：迁移核心文件
+
+使用 `SCP` 指令或 `WinSCP/FileZilla` 等工具，将本地的以下文件上传到服务器的 `/opt/tg_vault/` 根目录：
+
+- `config.py`
+- `vault.db`
+- `*.session` (共 3 个文件)
+
+---
+
+## 🚀 第三步：后台保活配置 (Systemd)
+
+为了让机器人在关掉 SSH 后依然运行，并实现开机自启：
+
+1.  **创建服务文件**:
+    ```bash
+    sudo nano /etc/systemd/system/tgvault.service
+    ```
+2.  **写入以下配置**:
+    ```ini
+    [Unit]
+    Description=Telegram Private Vault Service
+    After=network.target
+
+    [Service]
+    User=root
+    WorkingDirectory=/opt/tg_vault
+    ExecStart=/opt/tg_vault/venv/bin/python bot.py
+    Restart=always
+    RestartSec=5
+
+    [Install]
+    WantedBy=multi-user.target
+    ```
+3.  **启动服务**:
+    ```bash
+    sudo systemctl daemon-reload
+    sudo systemctl enable tgvault
+    sudo systemctl start tgvault
+    ```
+
+---
+
+## 🖥️ 宝塔面板 (Baota) 快速部署
+
+如果您使用宝塔面板，可以更简单地部署：
+
+1.  使用 **Python项目管理器**。
+2.  **添加项目**:
+    - 路径选择解压后的文件夹（确保包含了上传的 `vault.db` 和 `session`）。
+    - 启动文件选 `bot.py`。
+    - 勾选 **“安装模块依赖”**。
+3.  **手动安装 TgCrypto**:
+    - 在项目虚拟环境中执行 `pip install tgcrypto` 以保证加解密性能。
+4.  **注意**: 即使在宝塔上，也要确认存储路径是否有写入权限。
+
+---
+
+## ❓ 常见问题排查
+
+- **Q: 启动提示 `Peer id invalid`？**
+  - A: Session 文件失效或未上传。建议在本地删除该 session 重新登录一次，再将新生成的 session 上传到服务器。
+- **Q: 磁盘空间报警？**
+  - A: 本项目已有“流式分片清理”机制，但如果您单次处理的文件极大，请确保磁盘剩余空间大于单文件大小的 3 倍。
+- **Q: 连接超时？**
+  - A: 请确认服务器位于 **中国大陆以外**，且防火墙已放行 8080 端口（如果您开启了 Web 播放功能）。
