@@ -64,13 +64,25 @@ async def send_main_menu(client, message):
         "🔐 **数据安全**: 本地加密，云端存储\n"
         "⚡️ **极速体验**: 自动分流，满速上传\n"
         "🎥 **流媒体**: 支持原画质在线播放",
-        reply_markup=ReplyKeyboardMarkup(
-            buttons, 
-            resize_keyboard=True, 
-            one_time_keyboard=False,
-            is_persistent=True,
-            placeholder="请选择功能..."
-        )
+        "⚡️ **极速体验**: 自动分流，满速上传\n"
+        "🎥 **流媒体**: 支持原画质在线播放",
+        reply_markup=get_main_menu_keyboard(is_adm)
+    )
+
+def get_main_menu_keyboard(is_admin_user=False):
+    from pyrogram.types import ReplyKeyboardMarkup, KeyboardButton
+    buttons = [
+        [KeyboardButton("📥 批量下载"), KeyboardButton("☁️ 存储/上传")]
+    ]
+    if is_admin_user:
+        buttons.append([KeyboardButton("👮 管理员")])
+    
+    return ReplyKeyboardMarkup(
+        buttons, 
+        resize_keyboard=True, 
+        one_time_keyboard=False,
+        is_persistent=True,
+        placeholder="请选择功能..."
     )
 
 @Client.on_callback_query(filters.regex("agree_terms"))

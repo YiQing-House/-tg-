@@ -2213,14 +2213,17 @@ async def menu_download_handler(client, message):
 @Client.on_message(filters.regex("📋 最近对话") & filters.private, group=-3)
 async def sub_recent_handler(client, message):
     await list_recent_chats(client, message)
+    message.stop_propagation()
 
 @Client.on_message(filters.regex("🔍 搜索对话") & filters.private, group=-3)
 async def sub_search_handler(client, message):
     await search_chats(client, message)
+    message.stop_propagation()
 
 @Client.on_message(filters.regex("👻 删除账户") & filters.private, group=-3)
 async def sub_deleted_handler(client, message):
     await find_deleted_accounts(client, message)
+    message.stop_propagation()
 
 @Client.on_message(filters.regex("📥 开始下载") & filters.private, group=-3)
 async def sub_start_download_handler(client, message):
@@ -2258,6 +2261,7 @@ async def menu_storage_handler(client, message):
             is_persistent=True
         )
     )
+    message.stop_propagation()
 
 # Sub-menu handlers for Storage
 @Client.on_message(filters.regex("📂 我的合集") & filters.private, group=-3)
@@ -2267,10 +2271,12 @@ async def sub_my_collections(client, message):
     # Ideally, just call the function if it accepts (client, message)
     # my_collections_cmd is at ~line 942
     await my_collections_cmd(client, message)
+    message.stop_propagation()
 
 @Client.on_message(filters.regex("🆕 新建合集") & filters.private, group=-3)
 async def sub_new_collection(client, message):
     await create_collection_cmd(client, message)
+    message.stop_propagation()
 
 @Client.on_message(filters.regex("🔍 查找文件") & filters.private, group=-3)
 async def sub_find_file(client, message):
@@ -2280,11 +2286,13 @@ async def sub_find_file(client, message):
     # It probably needs logic like create_collection_cmd to Prompt "What to find?"
     # For now, just call it.
     await find_cmd(client, message)
+    message.stop_propagation()
 
 @Client.on_message(filters.regex("📊 统计信息") & filters.private, group=-3)
 async def sub_stats_info(client, message):
     from handlers.tools import stats_cmd
     await stats_cmd(client, message)
+    message.stop_propagation()
 
 
 @Client.on_message(filters.regex("👮 管理员") & filters.private, group=-3)
@@ -2309,22 +2317,26 @@ async def menu_admin_handler(client, message):
             is_persistent=True
         )
     )
+    message.stop_propagation()
 
 # Sub-menu handlers for Admin
 @Client.on_message(filters.regex("👥 用户管理") & filters.private, group=-3)
 async def sub_admin_users(client, message):
     # Trigger list_users_handler
     await list_users_handler(client, message)
+    message.stop_propagation()
 
 @Client.on_message(filters.regex("📉 系统统计") & filters.private, group=-3)
 async def sub_admin_stats(client, message):
     await admin_stats_cmd(client, message)
+    message.stop_propagation()
 
 
 @Client.on_message(filters.regex("🔙 返回主菜单") & filters.private, group=-3)
 async def back_to_main(client, message):
     from handlers.setup import send_main_menu
     await send_main_menu(client, message)
+    message.stop_propagation()
 
 @Client.on_callback_query(filters.regex("cancel_action"))
 async def cancel_action_callback(client, callback):
@@ -2345,19 +2357,22 @@ async def download_state_handler(client, message):
     state = user_interaction_state.get(uid)
     
     # Handle original format: channel_id limit
-    # Handle original format: channel_id limit
     if state == "waiting_dl_id_limit":
         
         parts = message.text.strip().split()
         if len(parts) < 2:
-            await message.reply_text("❌ 格式错误！请输入：`频道ID 数量`\n例如：`-1001234567890 50`")
+            from handlers.setup import get_main_menu_keyboard
+            is_adm = message.from_user.id == client.admin_id
+            await message.reply_text("❌ 格式错误！请输入：`频道ID 数量`\n例如：`-1001234567890 50`", reply_markup=get_main_menu_keyboard(is_adm))
             return
         
         try:
             chat_id = int(parts[0])
             limit = int(parts[1])
         except ValueError:
-            await message.reply_text("❌ ID 或数量必须是数字！")
+            from handlers.setup import get_main_menu_keyboard
+            is_adm = message.from_user.id == client.admin_id
+            await message.reply_text("❌ ID 或数量必须是数字！请重试。\n或者点击下方按钮返回。", reply_markup=get_main_menu_keyboard(is_adm))
             return
         
         # Success! Consume state now
