@@ -1,0 +1,11 @@
+# 忽略敏感文件
+.env
+*.session
+*.session-journal
+vault.db
+file_vault.db
+*.db
+downloads/
+__pycache__/
+*.pyc
+bot.log
