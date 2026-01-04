@@ -125,6 +125,48 @@ sudo systemctl status tgvault
 sudo journalctl -u tgvault -f
 ```
 
+## 8. 宝塔面板 (Baota/aaPanel) 部署指南 (推荐)
+
+如果你使用的是宝塔面板，部署会更简单。
+
+### 第一步：上传文件
+1. 登录宝塔面板 -> **文件**。
+2. 进入 `/www/wwwroot/` 目录（或者你喜欢的其他目录）。
+3. 点击 **上传** -> 上传 `TelegramVault_Deploy.zip`。
+4. **解压** 压缩包，将文件夹重命名为 `tg_vault` (可选)。
+
+### 第二步：安装 Python 环境
+1. 打开 **终端** (宝塔面板左侧菜单)。
+2. 进入目录：
+   ```bash
+   cd /www/wwwroot/tg_vault
+   ```
+3. 安装依赖：
+   ```bash
+   pip3 install -r requirements.txt
+   pip3 install python-dotenv
+   ```
+   *(如果提示 pip3 command not found / 找不到命令，请在软件商店安装 "Python项目管理器" 并使用其中的 Python)*
+
+### 第三步：设置守护进程 (Supervisor)
+为了让机器人一直运行，推荐使用宝塔自带的 **Supervisor管理器**。
+
+1. **软件商店** ->搜索 `Supervisor` -> 安装 **Supervisor管理器**。
+2. 打开 Supervisor管理器 -> **添加守护进程**。
+   - **名称**: `tg_bot` (随意填)
+   - **启动用户**: `root`
+   - **运行目录**: `/www/wwwroot/tg_vault` (选择你的实际目录)
+   - **启动命令**: `python3 bot.py`
+     *(如果你用了虚拟环境，路径可能是 `/www/wwwroot/tg_vault/venv/bin/python bot.py`)*
+   - **进程数量**: 1
+3. 点击 **确定**。
+4. 状态显示 **已启动** (绿色) 即成功！
+
+### 第四步：查看日志
+在 Supervisor管理器中，点击 `tg_bot` 右侧的 **日志**，可以看到机器人的运行输出。如果看到 `Telegram Private Vault is running...` 就说明一切正常。
+
+---
+
 ## 常见问题
 
 Q: 报错 `Peer id invalid`？
