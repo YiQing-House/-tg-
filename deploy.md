@@ -184,6 +184,13 @@ sudo journalctl -u tgvault -f
 - **日志显示 `Peer id invalid`**: 说明 session 文件有问题。
   - 请在 **文件** 管理器中，检查 `vault_bot.session` 是否存在且有文件大小。
   - 如果文件是 0KB 或不存在，请从本地重新上传。
+- **Python 安装失败 (make: *** No targets specified)**:
+  - 这通常是下载的安装包损坏或有缓存冲突。
+  - **解决方法**: 打开宝塔左侧的 **终端**，执行命令清理缓存：
+    ```bash
+    rm -rf /tmp/Python-*
+    ```
+    然后重新去安装 Python。
 
 
 ---
