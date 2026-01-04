@@ -1,0 +1,11 @@
+with open('.env', 'w', encoding='utf-8') as f:
+    f.write('TG_API_ID=20778895\n')
+    f.write('TG_API_HASH=803c3533e331d3eb38a924cf982320a8\n')
+    f.write('TG_BOT_TOKEN=8345735877:AAF08L57j5Q5glEFq4Pg1ksNxtIDUT3ZJwg\n')
+    f.write('TG_STORAGE_CHANNEL=-1003367631991\n')
+    f.write('ADMIN_ID=6260786995\n')
+    f.write('ENCRYPTION_KEY=BV4x3vEOrohSyOzQidqiwmeddSlSO-h4_ll9F_mkpmI\n')
+    f.write('DB_PASSWORD=change_this_to_a_strong_password\n')
+    f.write('WEB_SERVER_PORT=8080\n')
+    f.write('WEB_PUBLIC_HOST=127.0.0.1:8080\n')
+print("Restored .env")
