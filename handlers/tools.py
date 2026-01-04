@@ -1295,8 +1295,8 @@ async def add_to_collection_callback(client: Client, callback: CallbackQuery):
     from database import db
     
     parts = callback.data.split("_")
-    access_key = parts[1]
-    collection_id = int(parts[2])
+    collection_id = int(parts[-1])
+    access_key = "_".join(parts[1:-1])
     
     # 获取文件 ID
     db.cursor.execute('SELECT id FROM files WHERE access_key = ?', (access_key,))
@@ -1325,8 +1325,8 @@ async def picker_pagination_callback(client: Client, callback: CallbackQuery):
     import config
     
     parts = callback.data.split("_")
-    access_key = parts[2]
-    page = int(parts[3])
+    page = int(parts[-1])
+    access_key = "_".join(parts[2:-1])
     
     # 1. 获取文件名称以重建文本
     db.cursor.execute('SELECT file_name FROM files WHERE access_key = ?', (access_key,))
@@ -1356,7 +1356,8 @@ async def picker_pagination_callback(client: Client, callback: CallbackQuery):
 @Client.on_callback_query(filters.regex(r"^newcol_"))
 async def new_collection_callback(client: Client, callback: CallbackQuery):
     """创建新合集并添加文件"""
-    access_key = callback.data.split("_")[1]
+    parts = callback.data.split("_")
+    access_key = "_".join(parts[1:])
     user_id = callback.from_user.id
     
     user_pending_newcol[user_id] = access_key
@@ -1371,7 +1372,8 @@ async def new_collection_callback(client: Client, callback: CallbackQuery):
 @Client.on_callback_query(filters.regex(r"^skipcol_"))
 async def skip_collection_callback(client: Client, callback: CallbackQuery):
     """跳过添加合集"""
-    access_key = callback.data.split("_")[1]
+    parts = callback.data.split("_")
+    access_key = "_".join(parts[1:])
     
     await callback.message.edit_text(
         f"✅ **已加密存储！**\n\n"
@@ -1427,22 +1429,32 @@ async def collection_pagination_callback(client: Client, callback: CallbackQuery
     from database import db
     parts = callback.data.split("_")
     action = parts[1]
-    access_key = parts[2]
     
+    if action == "all":
+        access_key = "_".join(parts[2:])
+        page = 1
+    else:
+        # pg or dl
+        try:
+            page = int(parts[-1])
+            access_key = "_".join(parts[2:-1])
+        except ValueError:
+            # Fallback for unexpected formats
+            page = 1
+            access_key = "_".join(parts[2:])
+
     collection = db.get_collection_by_key(access_key)
     if not collection:
-        await callback.answer("合集不存在或密钥已失效", show_alert=True)
+        await callback.answer(f"合集不存在或密钥已失效\n(Key: {access_key})", show_alert=True)
         return
         
     files = db.get_collection_files(collection["id"])
     
     if action == "pg":
-        page = int(parts[3])
         await show_collection_page(client, callback.message, collection, files, page, is_callback=True)
         await callback.answer()
         
     elif action == "dl":
-        page = int(parts[3])
         per_page = 10
         start_idx = (page - 1) * per_page
         end_idx = start_idx + per_page
