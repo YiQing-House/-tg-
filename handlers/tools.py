@@ -924,9 +924,16 @@ async def media_handler(client: Client, message: Message):
     # 文件未入库 -> 自动下载、加密、上传、入库
     status_msg = await message.reply_text(f"📥 正在处理 `{file_name}`...")
     
+    import uuid
+    unique_id = str(uuid.uuid4())[:8]
+    temp_file_name = f"temp_{unique_id}_{file_name}"
+    
+    # ...
+    
     try:
         # 1. 下载文件
-        download_path = await client.download_media(message, file_name=f"temp_{file_name}")
+        # 使用唯一文件名避免冲突
+        download_path = await client.download_media(message, file_name=temp_file_name)
         
         # 2. AES 加密
         from services.crypto_utils import generate_key, encrypt_file
@@ -939,6 +946,10 @@ async def media_handler(client: Client, message: Message):
         
         random_name = ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(16))
         encrypted_filename = f"{random_name}.bin"
+        # 确保下载路径存在再操作
+        if not download_path:
+             raise Exception("Download failed, path is empty")
+             
         encrypted_path = os.path.join(os.path.dirname(download_path), encrypted_filename)
         
         await status_msg.edit_text(f"🔒 正在加密 `{file_name}`...")
