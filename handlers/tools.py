@@ -13,6 +13,7 @@ user_dialogs_cache = {}
 user_download_dest = {}
 user_last_action = {}  # 频率限制：记录用户上次操作时间
 user_collecting_mode = {}  # 收集模式：{user_id: {"collection_id": xxx, "collection_name": xxx, "files": []}}
+user_last_collection = {}  # 最后一次使用的合集 {user_id: {'id': id, 'name': name}}
 
 # ========== 安全检查 ==========
 
@@ -992,6 +993,64 @@ async def end_collecting_mode(client: Client, message: Message):
         f"分享密钥给他人即可获取整个合集！"
     )
 
+async def get_collection_picker_keyboard(user_id, file_access_key, page=1):
+    """生成合集选择键盘(支持分页和快速添加)"""
+    from database import db
+    from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+    
+    collections = db.get_user_collections(user_id)
+    # 按ID倒序（最新的在前）
+    collections.sort(key=lambda x: x['id'], reverse=True)
+    
+    per_page = 5
+    total_pages = max(1, (len(collections) + per_page - 1) // per_page)
+    
+    if page < 1: page = 1
+    if page > total_pages: page = total_pages
+    
+    start = (page - 1) * per_page
+    end = start + per_page
+    page_items = collections[start:end]
+    
+    buttons = []
+    
+    # 快速添加 (Last Used)
+    last_col = user_last_collection.get(user_id)
+    if last_col and page == 1: # 仅第一页显示快速添加
+        # 验证该合集是否还在列表中
+        exists = any(c['id'] == last_col['id'] for c in collections)
+        if exists:
+            buttons.append([InlineKeyboardButton(
+                f"⚡ 快速添加: {last_col['name']}",
+                callback_data=f"addcol_{file_access_key}_{last_col['id']}"
+            )])
+        
+    for c in page_items:
+        buttons.append([InlineKeyboardButton(
+            f"📁 {c['name']} ({c['file_count']})", 
+            callback_data=f"addcol_{file_access_key}_{c['id']}"
+        )])
+        
+    # 翻页
+    nav = []
+    if page > 1:
+        nav.append(InlineKeyboardButton("⬅️", callback_data=f"pick_pg_{file_access_key}_{page-1}"))
+    if page < total_pages:
+        nav.append(InlineKeyboardButton("➡️", callback_data=f"pick_pg_{file_access_key}_{page+1}"))
+    if nav:
+        buttons.append(nav)
+        
+    buttons.append([InlineKeyboardButton(
+        "➕ 新建合集", 
+        callback_data=f"newcol_{file_access_key}"
+    )])
+    buttons.append([InlineKeyboardButton(
+        "❌ 不添加", 
+        callback_data=f"skipcol_{file_access_key}"
+    )])
+    
+    return InlineKeyboardMarkup(buttons)
+
 @Client.on_message(filters.media & filters.private)
 async def media_handler(client: Client, message: Message):
     """处理收到的媒体文件 (包括转发的文件) - 自动加密存储"""
@@ -1176,32 +1235,15 @@ async def media_handler(client: Client, message: Message):
                 f"_(发 **结束** 完成收集)_"
             )
         else:
-            # 非收集模式：返回提取码 + 可选添加到合集
-            # 获取现有合集列表
-            collections = db.get_user_collections(config.ADMIN_ID)
-            
-            # 构建按钮
-            buttons = []
-            for c in collections[:5]:  # 最多显示5个
-                buttons.append([InlineKeyboardButton(
-                    f"📁 {c['name']}", 
-                    callback_data=f"addcol_{access_key}_{c['id']}"
-                )])
-            buttons.append([InlineKeyboardButton(
-                "➕ 新建合集", 
-                callback_data=f"newcol_{access_key}"
-            )])
-            buttons.append([InlineKeyboardButton(
-                "❌ 不添加", 
-                callback_data=f"skipcol_{access_key}"
-            )])
+            # 非收集模式：返回提取码 + 可选添加到合集 (使用分页键盘)
+            keyboard = await get_collection_picker_keyboard(config.ADMIN_ID, access_key, page=1)
             
             await status_msg.edit_text(
                 f"✅ **已加密存储！**\n\n"
                 f"📄 文件: `{file_name}`\n"
                 f"🔑 提取码: `{access_key}`\n\n"
                 f"**添加到哪个合集？**",
-                reply_markup=InlineKeyboardMarkup(buttons)
+                reply_markup=keyboard
             )
         
     except Exception as e:
@@ -1229,12 +1271,31 @@ async def add_to_collection_callback(client: Client, callback: CallbackQuery):
     row = db.cursor.fetchone()
     if row:
         db.add_file_to_collection(collection_id, row[0])
+        
+        # 获取合集名称用于缓存
+        db.cursor.execute("SELECT name FROM collections WHERE id=?", (collection_id,))
+        col_res = db.cursor.fetchone()
+        col_name = col_res[0] if col_res else "合集"
+        
+        if col_res:
+            user_last_collection[callback.from_user.id] = {'id': collection_id, 'name': col_name}
+        
         await callback.message.edit_text(
-            f"✅ 已添加到合集！\n\n"
+            f"✅ 已添加到合集 **{col_name}**！\n\n"
             f"🔑 提取码: `{access_key}`"
         )
     else:
         await callback.answer("❌ 文件未找到", show_alert=True)
+
+@Client.on_callback_query(filters.regex(r"^pick_pg_"))
+async def picker_pagination_callback(client: Client, callback: CallbackQuery):
+    parts = callback.data.split("_")
+    access_key = parts[2]
+    page = int(parts[3])
+    
+    keyboard = await get_collection_picker_keyboard(callback.from_user.id, access_key, page)
+    await callback.message.edit_reply_markup(reply_markup=keyboard)
+    await callback.answer()
 
 @Client.on_callback_query(filters.regex(r"^newcol_"))
 async def new_collection_callback(client: Client, callback: CallbackQuery):
