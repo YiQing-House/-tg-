@@ -642,24 +642,58 @@ async def do_create_collection(client, message, name):
     
     if collection_id:
         # 进入收集模式
+        # 进入收集模式
+        sent_msg = await message.reply_text(
+            f"✅ **合集 [{name}] 创建成功！**\n\n"
+            f"🔑 密钥: `{access_key}`\n\n"
+            f"📥 **现在进入收集模式！**\n"
+            f"• 直接批量转发文件给我\n"
+            f"• 我会静默添加到此合集\n"
+            f"• 状态将实时更新在此消息中\n"
+            f"• 发 **结束** 完成收集\n\n"
+            f"⏳ 等待文件..."
+        )
+        
         user_collecting_mode[owner_id] = {
             "collection_id": collection_id,
             "collection_name": name,
             "access_key": access_key,
-            "files": []
+            "files": [],
+            "status_msg_id": sent_msg.id,
+            "status_chat_id": sent_msg.chat.id,
+            "success": 0,
+            "fail": 0,
+            "total": 0,
+            "last_update": 0
         }
-        
-        await message.reply_text(
-            f"✅ **合集 [{name}] 创建成功！**\n\n"
-            f"🔑 密钥: `{access_key}`\n\n"
-            f"📥 **现在进入收集模式！**\n"
-            f"• 直接发文件/链接给我\n"
-            f"• 我会自动添加到这个合集\n"
-            f"• 发 **结束** 完成收集\n\n"
-            f"开始吧！👇"
-        )
     else:
         await message.reply_text("❌ 创建失败！请重试。")
+
+@Client.on_message(filters.regex(r"^(结束|finish|完成)$", re.IGNORECASE) & filters.private)
+async def finish_collection_cmd(client: Client, message: Message):
+    """结束收集模式"""
+    user_id = message.from_user.id
+    if user_id in user_collecting_mode:
+        mode = user_collecting_mode.pop(user_id)
+        
+        # 最终汇总
+        try:
+            # 尝试更新 Dashboard 为最终状态
+            await client.edit_message_text(
+                chat_id=mode['status_chat_id'],
+                message_id=mode['status_msg_id'],
+                text=(
+                    f"✅ **合集 [{mode['collection_name']}] 收集完成！**\n\n"
+                    f"📊 总共: {mode['total']} | ✅ 成功: {mode['success']} | ❌ 失败: {mode['fail']}\n"
+                    f"🔑 密钥: `{mode['access_key']}`"
+                )
+            )
+        except: pass
+        
+        await message.reply_text(
+            f"🎉 **任务结束！**\n"
+            f"已退出收集模式。"
+        )
 
 @Client.on_message(filters.command("addto") & filters.private & filters.reply)
 async def add_to_collection_cmd(client: Client, message: Message):
@@ -1133,15 +1167,31 @@ async def media_handler(client: Client, message: Message):
         existing_file_id = row[0]
         existing_access_key = row[1]
         
-        if in_collection_mode:
-            # 收集模式：添加到合集
-            if db.add_file_to_collection(mode["collection_id"], existing_file_id):
-                mode["files"].append(file_name)
-                await message.reply_text(
-                    f"✅ 已添加 `{file_name}` 到合集\n"
-                    f"📊 当前: {len(mode['files'])} 个文件\n"
-                    f"_(发 **结束** 完成收集)_"
-                )
+            if in_collection_mode:
+                # 收集模式：添加到合集
+                mode['total'] += 1
+                if db.add_file_to_collection(mode["collection_id"], existing_file_id):
+                    mode["files"].append(file_name)
+                    mode['success'] += 1
+                else:
+                    mode['success'] += 1 # 重复添加也算成功
+                
+                # Dashboard
+                now = time.time()
+                if now - mode.get('last_update', 0) > 2.0:
+                    mode['last_update'] = now
+                    try:
+                        await client.edit_message_text(
+                            chat_id=mode['status_chat_id'],
+                            message_id=mode['status_msg_id'],
+                            text=(
+                                f"📁 接收合集: **{mode['collection_name']}**\n"
+                                f"🔄 秒传成功: `{file_name}`\n"
+                                f"📊 进度: {mode['total']} | ✅ {mode['success']} | ❌ {mode['fail']}\n"
+                                f"⏳ 发 **结束** 完成"
+                            )
+                        )
+                    except: pass
             else:
                 await message.reply_text(f"⚠️ `{file_name}` 已在合集中")
         else:
@@ -1154,7 +1204,26 @@ async def media_handler(client: Client, message: Message):
         return
     
     # 文件未入库 -> 自动下载、加密、上传、入库
-    status_msg = await message.reply_text(f"📥 正在处理 `{file_name}`...")
+    status_msg = None
+    if in_collection_mode:
+        mode['total'] += 1
+        now = time.time()
+        if now - mode.get('last_update', 0) > 2.0:
+            mode['last_update'] = now
+            try:
+                await client.edit_message_text(
+                    chat_id=mode['status_chat_id'],
+                    message_id=mode['status_msg_id'],
+                    text=(
+                        f"📁 接收合集: **{mode['collection_name']}**\n"
+                        f"🔄 正在处理: `{file_name}`\n"
+                        f"📊 进度: {mode['total']} | ✅ {mode['success']} | ❌ {mode['fail']}\n"
+                        f"⏳ 发 **结束** 完成"
+                    )
+                )
+            except: pass
+    else:
+        status_msg = await message.reply_text(f"📥 正在处理 `{file_name}`...")
     
     import uuid
     unique_id = str(uuid.uuid4())[:8]
@@ -1184,7 +1253,7 @@ async def media_handler(client: Client, message: Message):
              
         encrypted_path = os.path.join(os.path.dirname(download_path), encrypted_filename)
         
-        await status_msg.edit_text(f"🔒 正在加密 `{file_name}`...")
+        if status_msg: await status_msg.edit_text(f"🔒 正在加密 `{file_name}`...")
         await asyncio.to_thread(encrypt_file, download_path, encrypted_path, aes_key)
         
         # 删除原文件 (添加延时避免文件锁定)
@@ -1196,7 +1265,7 @@ async def media_handler(client: Client, message: Message):
             pass
         
         # 3. 上传到存储频道 (优先用 Bot，失败则用闲置账号)
-        await status_msg.edit_text(f"⬆️ 正在上传 `{file_name}`...")
+        if status_msg: await status_msg.edit_text(f"⬆️ 正在上传 `{file_name}`...")
         
         storage_msg = None
         upload_method = "Bot"
@@ -1260,12 +1329,23 @@ async def media_handler(client: Client, message: Message):
                 db.add_file_to_collection(mode["collection_id"], new_row[0])
             
             mode["files"].append(file_name)
-            await status_msg.edit_text(
-                f"✅ `{file_name}` 已加密入库并添加到合集\n"
-                f"📊 当前: {len(mode['files'])} 个文件\n"
-                f"🔑 提取码: `{access_key}`\n"
-                f"_(发 **结束** 完成收集)_"
-            )
+            mode['success'] += 1
+            
+            now = time.time()
+            if now - mode.get('last_update', 0) > 2.0:
+                mode['last_update'] = now
+                try:
+                    await client.edit_message_text(
+                        chat_id=mode['status_chat_id'],
+                        message_id=mode['status_msg_id'],
+                        text=(
+                            f"📁 接收合集: **{mode['collection_name']}**\n"
+                            f"✅ 刚刚完成: `{file_name}`\n"
+                            f"📊 进度: {mode['total']} | ✅ {mode['success']} | ❌ {mode['fail']}\n"
+                            f"⏳ 发 **结束** 完成"
+                        )
+                    )
+                except: pass
         else:
             # 非收集模式：返回提取码 + 可选添加到合集 (使用分页键盘)
             keyboard = await get_collection_picker_keyboard(config.ADMIN_ID, access_key, page=1)
