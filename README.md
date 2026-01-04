@@ -124,4 +124,15 @@ python bot.py
 
 ## 免责声明
 
-本项目仅供技术研究和个人学习使用。请勿用于存储违反法律法规的内容。作者不对使用本项目产生的任何后果负责。
+## 开源协议
+
+本项目采用 [MIT License](LICENSE) 开源协议。
+
+## 致谢 / 参考
+
+本项目参考或使用了以下开源项目和资源：
+
+*   **[Pyrogram](https://github.com/pyrogram/pyrogram)**: 优雅、现代的 Telegram MTProto API 框架。
+*   **Telegram Bot API**: 强大的 Telegram 机器人接口。
+
+如果你觉得这个项目对你有帮助，欢迎点个 Star ⭐️！
