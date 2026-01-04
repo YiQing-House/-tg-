@@ -112,3 +112,31 @@ pip install tgcrypto  # 强烈建议安装，可将解密速度提升 10 倍以�
   - A: 本项目已有“流式分片清理”机制，但如果您单次处理的文件极大，请确保磁盘剩余空间大于单文件大小的 3 倍。
 - **Q: 连接超时？**
   - A: 请确认服务器位于 **中国大陆以外**，且防火墙已放行 8080 端口（如果您开启了 Web 播放功能）。
+
+---
+
+## 🖥️ 宝塔面板 (Baota) CentOS 部署指南
+
+如果您使用的是 CentOS 系统且安装了宝塔面板，请参考以下专用步骤：
+
+### 1. 安装 Python 环境
+1.  进入宝塔 **软件商店**，搜索并安装 **Python项目管理器**。
+2.  在管理器内选择 **版本管理**，安装 **Python 3.9** 或更高版本。
+3.  **CentOS 7 特别注意**: CentOS 7 自带 Python 2.7，不要动系统自带的。在宝塔内安装的 Python 3.9 会处于独立路径。
+
+### 2. 上传并解压
+1.  将 `TelegramVault_Deploy.zip` 上传到 `/www/wwwroot/`。
+2.  解压到当前目录，确保路径结构为 `/www/wwwroot/TelegramPrivateVault/bot.py`。
+3.  **确认文件**: 检查刚才上传的 `vault.db` 和 `*.session` 是否已在目录下。
+
+### 3. 创建项目
+1.  在 **Python项目管理器** 中点击 **添加项目**：
+    - **项目路径**: `/www/wwwroot/TelegramPrivateVault`
+    - **启动文件**: `bot.py`
+    - **Python版本**: 选择 `Python 3.9`
+    - **安装模块依赖**: ✅ 勾选
+2.  如果依赖安装缓慢或报错，请点击项目右侧的 **模块**，手动添加关键模块：`pyrogram`, `tgcrypto`, `python-dotenv`, `cryptography`。
+
+### 4. 验证与保活
+- 点击 **日志**，看到 `Telegram Private Vault is running...` 即可。
+- 状态显示 **运行中**，宝塔会自动维持进程。
