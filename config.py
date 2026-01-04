@@ -1,4 +1,8 @@
 import os
+from dotenv import load_dotenv
+
+# 加载 .env 文件 (如果存在)
+load_dotenv()
 
 # ======== 安全配置 ========
 # 敏感信息从环境变量读取，部署时设置环境变量
