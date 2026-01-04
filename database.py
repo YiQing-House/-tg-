@@ -58,6 +58,22 @@ class Database:
         ''')
         self.conn.commit()
         
+        self.cursor.execute('''
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY,
+                username TEXT,
+                first_name TEXT,
+                status TEXT DEFAULT 'active', -- active, banned
+                ban_until TIMESTAMP,
+                first_name TEXT,
+                status TEXT DEFAULT 'active', -- active, banned
+                accepted_terms BOOLEAN DEFAULT 0,
+                ban_until TIMESTAMP,
+                last_active TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        self.conn.commit()
+        
         # Schema Migration: Add missing columns to existing database
         migrations = [
             ("access_key", "TEXT UNIQUE"),
@@ -65,6 +81,8 @@ class Database:
             ("encryption_key", "TEXT"),
             ("storage_mode", "TEXT DEFAULT 'local'"),
             ("local_path", "TEXT"),
+            ("backup_message_id", "INTEGER DEFAULT 0"),
+            ("backup_chat_id", "INTEGER DEFAULT 0"),
         ]
         
         for col_name, col_type in migrations:
@@ -73,6 +91,17 @@ class Database:
                 self.conn.commit()
             except:
                 pass  # Column already exists
+        
+        try:
+            self.cursor.execute("ALTER TABLE users ADD COLUMN accepted_terms BOOLEAN DEFAULT 0")
+            self.conn.commit()
+        except: pass
+
+        # Migration: Ban Reason
+        try:
+            self.cursor.execute("ALTER TABLE users ADD COLUMN ban_reason TEXT")
+            self.conn.commit()
+        except: pass
 
     def encrypt_text(self, text):
         if text is None:
@@ -87,14 +116,14 @@ class Database:
         except:
             return "[Decryption Failed]"
 
-    def add_file(self, message_id, chat_id, file_id, file_unique_id, file_name, caption, file_size, mime_type, local_path=None, storage_mode='local', access_key=None, is_encrypted=False, encryption_key=None):
+    def add_file(self, message_id, chat_id, file_id, file_unique_id, file_name, caption, file_size, mime_type, local_path=None, storage_mode='local', access_key=None, is_encrypted=False, encryption_key=None, backup_message_id=0, backup_chat_id=0):
         self.cursor.execute('''
-            INSERT INTO files (message_id, chat_id, file_id, local_path, storage_mode, file_unique_id, file_name_enc, caption_enc, file_size, mime_type, access_key, is_encrypted, encryption_key)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO files (message_id, chat_id, file_id, local_path, storage_mode, file_unique_id, file_name_enc, caption_enc, file_size, mime_type, access_key, is_encrypted, encryption_key, backup_message_id, backup_chat_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (message_id, chat_id, file_id, local_path, storage_mode, file_unique_id, 
               self.encrypt_text(file_name), 
               self.encrypt_text(caption), 
-              file_size, mime_type, access_key, is_encrypted, encryption_key))
+              file_size, mime_type, access_key, is_encrypted, encryption_key, backup_message_id, backup_chat_id))
         self.conn.commit()
     
     def get_file_by_key(self, key):
@@ -246,7 +275,9 @@ class Database:
                 "file_size": row[9],
                 "mime_type": row[10],
                 "is_encrypted": row[12],
-                "encryption_key": row[13]
+                "encryption_key": row[13],
+                "backup_message_id": row[14] if len(row) > 14 else 0,
+                "backup_chat_id": row[15] if len(row) > 15 else 0
             })
         return results
     
@@ -284,6 +315,60 @@ class Database:
             }
         return None
 
+    def update_user(self, user_id, username, first_name):
+        """更新用户信息"""
+        try:
+            self.cursor.execute('''
+                INSERT INTO users (id, username, first_name, last_active)
+                VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+                ON CONFLICT(id) DO UPDATE SET
+                    username = excluded.username,
+                    first_name = excluded.first_name,
+                    last_active = CURRENT_TIMESTAMP
+            ''', (user_id, username, first_name))
+            self.conn.commit()
+        except: pass
+
+    def get_user(self, user_id):
+        self.cursor.execute('SELECT * FROM users WHERE id = ?', (user_id,))
+        row = self.cursor.fetchone()
+        if row:
+            return {
+                "id": row[0],
+                "username": row[1],
+                "first_name": row[2],
+                "status": row[3],
+                "ban_until": row[4],
+                "accepted_terms": row[5] if len(row) > 5 else 0,
+                "ban_reason": row[6] if len(row) > 6 else None
+            }
+        return None
+
+    def accept_terms(self, user_id):
+        self.cursor.execute('UPDATE users SET accepted_terms = 1 WHERE id = ?', (user_id,))
+        self.conn.commit()
+
+    def get_all_users(self):
+        self.cursor.execute('SELECT * FROM users ORDER BY last_active DESC')
+        rows = self.cursor.fetchall()
+        return [{"id": r[0], "username": r[1], "first_name": r[2], "status": r[3], "ban_until": r[4]} for r in rows]
+    
+    def set_user_ban(self, user_id, status, ban_until=None, reason=None):
+        """设置用户封禁状态"""
+        self.cursor.execute(
+            'UPDATE users SET status = ?, ban_until = ?, ban_reason = ? WHERE id = ?',
+            (status, ban_until, reason, user_id)
+        )
+        self.conn.commit()
+
+    def update_user_terms(self, user_id, accepted=True):
+        """更新用户条款接受状态"""
+        val = 1 if accepted else 0
+        self.cursor.execute('UPDATE users SET accepted_terms = ? WHERE id = ?', (val, user_id))
+        self.conn.commit()
+
+
 db = Database()
 # 初始化合集表
 db.init_collections_table()
+

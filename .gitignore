@@ -1,4 +1,4 @@
-# 忽略敏感文件
+config.py
 .env
 *.session
 *.session-journal
@@ -9,3 +9,4 @@ downloads/
 __pycache__/
 *.pyc
 bot.log
+temp/

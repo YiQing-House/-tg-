@@ -1,6 +1,7 @@
 from pyrogram import Client, filters
-from pyrogram.types import Message
+from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
 import config
+from handlers.tools import check_auth
 
 # ========== 管理员专用检查 ==========
 def is_admin(client, user_id):
@@ -9,93 +10,111 @@ def is_admin(client, user_id):
 
 @Client.on_message(filters.command("start") & filters.private)
 async def start_handler(client: Client, message: Message):
-    """Handle /start command - 管理员专用"""
-    # 非管理员直接拒绝，并显示用户 ID 用于调试
-    # 非管理员直接拒绝
-    if not is_admin(client, message.from_user.id):
-        return  # 保持静默，不回复任何信息，防止被探测
+    """Handle /start command"""
+    # 权限检查
+    if not await check_auth(client, message):
+        return
 
     
-    # === Deep Linking 处理 (例如 /start file_unique_id) ===
-    if len(message.command) > 1:
-        param = message.command[1]
-        
-        # 尝试从数据库查找文件 (通过 unique_id)
-        # 注意: 之前数据库设计没有直接通过 unique_id 查找的函数，我们需要去 implement 或者用 search
-        # 为了高效，这里直接查库
-        from database import db
-        # 临时查询逻辑
-        db.cursor.execute("SELECT * FROM files WHERE file_unique_id = ?", (param,))
-        result = db.cursor.fetchone()
-        
-        if result:
-            # result 结构: id, msg_id, chat_id, file_id, local_path, storage_mode, unique_id, name_enc, cap_enc ...
-            # 索引: 0=id, 1=msg_id, 2=chat_id, 3=file_id, 4=local_path, 5=mode
-            
-            file_id = result[3]
-            storage_mode = result[5]
-            local_path = result[4]
-            caption = db.decrypt_text(result[7]) # caption_enc is index 7
-            
-            # 发送文件
-            try:
-                if storage_mode == 's3':
-                    from services.s3_client import s3
-                    url = s3.generate_presigned_url(local_path)
-                    await message.reply_text(f"☁️ **S3 文件下载**\n[点击下载]({url})\n{caption}")
-                    
-                elif storage_mode == 'local':
-                    await message.reply_text(f"📂 **本地文件**\n路径: `{local_path}`\n(无法远程发送)\n{caption}")
-                    
-                else: 
-                    # telegram / telegram_stealth 模式
-                    if file_id:
-                        await client.send_cached_media(
-                            message.chat.id,
-                            file_id,
-                            caption=caption
-                        )
-                    else:
-                         await message.reply_text("❌ 文件索引损坏：缺少 File ID")
-            except Exception as e:
-                 await message.reply_text(f"❌ 发送失败: {e}")
-            return
-
-    storage_mode = getattr(config, 'STORAGE_MODE', 'local').lower()
     
-    if storage_mode == 's3':
+
+    # === Terms Check (Session Based) ===
+    from handlers.session import is_session_active
+    from database import db
+    
+    # Check if user agreed in THIS session
+    if not is_session_active(message.from_user.id):
+        # Also check DB for record purposes? 
+        # User wants "Every time bot restarts", so strictly Session based for the Disclaimer SHOWING.
+        # But we can still respect the DB if we wanted, but User explicitly asked for "Every time".
+        # So we IGNORE DB for the *Interactive Check*.
+        
+        s_text = (
+            "📜 **免责声明 (Disclaimer)**\n\n"
+            "1. 本机器人仅用于个人数据备份与管理，代码开源且透明。\n"
+            "2. 用户需自行承担使用本工具产生的一切后果。\n"
+            "3. 请勿利用本工具存储或传播任何违反当地法律法规的内容。\n\n"
+            "点击下方按钮代表你已阅读并同意以上条款。"
+        )
         await message.reply_text(
-            f"👋 **欢迎使用 Telegram 私人保险库 (S3云端版)**\n\n"
-            f"☁️ **当前模式**: S3 对象存储\n"
-            f"📦 **存储桶**: `{config.S3_BUCKET_NAME}`\n\n"
-            f"发送给我的文件将自动上传到云端存储池 (R2/AWS)。"
+            s_text,
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("✅ 我同意以上条款", callback_data="agree_terms")]])
         )
-    elif storage_mode == 'local':
-        await message.reply_text(
-            f"👋 **欢迎使用 Telegram 私人保险库 (本地版)**\n\n"
-            f"💻 **当前模式**: 本地硬盘存储\n"
-            f"📂 **存储路径**: `{config.LOCAL_STORAGE_PATH}`\n\n"
-            f"发送文件给我，我会存到本地硬盘。"
+        return
+
+    # 显示主菜单
+    await send_main_menu(client, message)
+
+async def send_main_menu(client, message):
+    from pyrogram.types import ReplyKeyboardMarkup, KeyboardButton
+    
+    # Check Admin
+    is_adm = message.from_user.id == client.admin_id
+    
+    buttons = [
+        [KeyboardButton("📥 批量下载"), KeyboardButton("☁️ 存储/上传")]
+    ]
+    if is_adm:
+        buttons.append([KeyboardButton("👮 管理员")])
+        
+    await message.reply_text(
+        "👋 **欢迎回到私人文件保险箱！**\n\n"
+        "我是你的个人数据管家，提供最高级别的数据加密存储与管理服务。\n"
+        "请通过下方菜单选择功能：\n\n"
+        "🔐 **数据安全**: 本地加密，云端存储\n"
+        "⚡️ **极速体验**: 自动分流，满速上传\n"
+        "🎥 **流媒体**: 支持原画质在线播放",
+        reply_markup=ReplyKeyboardMarkup(
+            buttons, 
+            resize_keyboard=True, 
+            one_time_keyboard=False,
+            is_persistent=True,
+            placeholder="请选择功能..."
         )
-    elif 'telegram' in storage_mode:
-         await message.reply_text(
-            f"👋 **欢迎使用 Telegram 私人保险库 (防封版)**\n\n"
-            f"🛡️ **当前模式**: {storage_mode}\n"
-            f"🔐 **特性**: 自动混淆 Hash + 文件名加密\n"
-            f"♾️ **容量**: 无限 (Telegram 云)\n\n"
-            f"发送文件给我，我会加密处理后存入私密仓库，并给你生成提取链接。"
+    )
+
+@Client.on_callback_query(filters.regex("agree_terms"))
+async def terms_btn_callback(client: Client, callback):
+    from database import db
+    db.accept_terms(callback.from_user.id)
+    
+    await callback.answer("✅ 已同意条款")
+    try: await callback.message.delete()
+    except: pass
+    
+    # 这里的 message 可能是旧的，我们需要用 callback.message 的 chat_id 发新消息
+    # 但 callback.message 是 Bot 发的消息，没有 from_user 指向 User.
+    # 所以我们构造一个 fake message context 或者直接用 client.send_message
+    
+    # 重新构造 Message 对象是不行的，我们直接发
+    is_adm = callback.from_user.id == client.admin_id
+    buttons = [
+        [KeyboardButton("📥 批量下载"), KeyboardButton("☁️ 存储/上传")]
+    ]
+    if is_adm:
+        buttons.append([KeyboardButton("👮 管理员")])
+        
+    await client.send_message(
+        callback.message.chat.id,
+        "💡 当然，你也可以随时直接发送文件给我，我会自动处理。",
+        reply_markup=ReplyKeyboardMarkup(
+            buttons,
+            resize_keyboard=True,
+            one_time_keyboard=False,
+            is_persistent=True,
+            placeholder="请选择功能..."
         )
-    else:
-        # 原有的频道引导逻辑
-        await message.reply_text(
-            "👋 **欢迎使用 Telegram 私人保险库！**\n"
-            "你需要配置 STORAGE_CHANNEL_ID 才能开始。"
-        )
+    )
+
+
+    pass # Old logic removed
+
 
 @Client.on_message(filters.forwarded & filters.private)
 async def channel_id_sniffer(client: Client, message: Message):
-    """Detect forwarded messages - 管理员专用"""
-    if not is_admin(client, message.from_user.id):
+    """Detect forwarded messages"""
+    # 权限检查
+    if not await check_auth(client, message):
         return
     if message.forward_from_chat:
         chat_id = message.forward_from_chat.id
@@ -132,8 +151,9 @@ async def channel_id_sniffer(client: Client, message: Message):
 
 @Client.on_message(filters.text & filters.private & ~filters.reply & ~filters.command("start") & ~filters.command("recent") & ~filters.command("download") & ~filters.command("search") & ~filters.command("getid") & ~filters.command("linked") & ~filters.command("deleted") & ~filters.command("newcollection") & ~filters.command("addto") & ~filters.command("mycollections"))
 async def link_handler(client: Client, message: Message):
-    """Handle links and collection keys - 管理员专用"""
-    if not is_admin(client, message.from_user.id):
+    """Handle links and collection keys"""
+    # 权限检查
+    if not await check_auth(client, message):
         return
     import re
     text = message.text.strip()

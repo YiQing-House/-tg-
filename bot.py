@@ -64,20 +64,22 @@ async def main():
     await bot.start()
     
     # 设置机器人菜单命令
-    from pyrogram.types import BotCommand
+    from pyrogram.types import BotCommand, BotCommandScopeDefault, BotCommandScopeChat, BotCommandScopeAllPrivateChats
     try:
-        await bot.set_bot_commands([
-            BotCommand("start", "开始使用 | 检查状态"),
-            BotCommand("recent", "最近会话 | 分类筛选"),
-            BotCommand("search", "搜索对话 | /search 关键词"),
-            BotCommand("deleted", "死号对话 | 查找已封号账户"),
-            BotCommand("getid", "提取ID | 从转发消息获取"),
-            BotCommand("linked", "评论区ID | /linked 主频道ID"),
-            BotCommand("download", "批量下载 | /download ID 数量"),
-            BotCommand("newcollection", "创建合集 | /newcollection 名称 密钥"),
-            BotCommand("addto", "添加到合集 | 回复文件发送"),
-            BotCommand("mycollections", "我的合集 | 查看已创建合集")
-        ])
+        # 1. 设置普通用户的菜单 (清空，仅使用按钮导航)
+        public_commands = []  # Empty - use buttons only
+        await bot.set_bot_commands(public_commands, scope=BotCommandScopeAllPrivateChats())        # 同时设置 Default 以防万一
+        await bot.set_bot_commands(public_commands, scope=BotCommandScopeDefault())
+        
+        # 2. 设置管理员的菜单 (精简版)
+        admin_commands = public_commands + [
+             # BotCommand("users", "用户管理 | /users"),
+        ]
+        # Clear Commands for Admin so they use Panel?
+        # User requested "Don't show commands in menu".
+        # I will keep empty list for Admin chat scope to force using Reply Keyboard.
+        await bot.set_bot_commands([], scope=BotCommandScopeChat(chat_id=ADMIN_ID))
+
         print("✅ 机器人菜单命令已更新")
     except Exception as e:
         print(f"⚠️ 无法设置菜单: {e}")

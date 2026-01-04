@@ -16,6 +16,7 @@ BOT_TOKEN = os.getenv("TG_BOT_TOKEN", "123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11
 
 # Storage Configuration
 STORAGE_CHANNEL_ID = int(os.getenv("TG_STORAGE_CHANNEL", "-100xxxxxxxxxx"))
+BACKUP_CHANNEL_ID = int(os.getenv("TG_BACKUP_CHANNEL", "-1003481008336"))
 
 # Database Configuration
 DB_NAME = os.getenv("DB_NAME", "vault.db")
