@@ -40,29 +40,28 @@
 
 ---
 
-## 🚀 快速开始
+## 🛠️ 安装与部署 (Deployment)
 
-### 1. 环境准备
-- **Python 3.9+**
-- 获取 `API_ID` & `API_HASH` ( https://my.telegram.org/ )
-- 获取 `BOT_TOKEN` ( @BotFather )
+详细的部署说明请参考：**[📖 完整部署与迁移指南 (deploy.md)](deploy.md)**
 
-### 2. 初始化与配置
-1.  **复制模板**:
-    ```bash
-    cp config_example.py config.py
-    ```
-2.  **修改配置**: 编辑 `config.py` 填入您的秘钥、管理员 ID 以及存储频道 ID。
-3.  **安装依赖**:
-    ```bash
-    pip install -r requirements.txt
-    ```
+本项目支持以下部署方式：
+- **手动部署**: 适用于 Linux VPS (Ubuntu/CentOS)，通过 Systemd 保活。
+- **宝塔面板 (Baota)**: 针对 CentOS 环境的傻瓜式 Python 项目镜像部署。
 
-### 3. 首次启动
-```bash
-python bot.py
-```
-首次运行会提示登录主账号和闲置账号，验证后生成的 `.session` 文件请妥善保管。
+---
+
+## 📂 项目文件结构 (File Structure)
+
+| 路径 / 文件 | 说明 |
+| :--- | :--- |
+| `bot.py` | 程序主入口，负责 Bot 启动与事件调度。 |
+| `config.py` | 核心配置文件（包含 API 密钥、数据库路径等）。 |
+| `database.py` | 数据库逻辑层，处理所有文件索引及解密密钥。 |
+| `handlers/` | 业务逻辑目录，包含菜单、工具以及会话管理。 |
+| `services/` | 核心服务模块，包含 AES 加密工具、Web 服务及 S3 支持。 |
+| `vault.db` | **核心数据库文件**，请务必妥善备份。 |
+| `requirements.txt`| 项目依赖清单。 |
+| `config_example.py` | 配置模板，公开分享前请使用该文件隐藏私密信息。 |
 
 ---
 
