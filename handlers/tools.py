@@ -811,27 +811,51 @@ async def do_batch_download(client, message, chat_id, limit, dest="channel"):
             pass
         
         messages_to_process = []
-        async for msg in user.get_chat_history(chat_id, limit=limit):
+        scan_count = 0
+        # Scan up to 500 messages or 10x the limit to find media
+        max_scan = max(500, limit * 10)
+        
+        async for msg in user.get_chat_history(chat_id):
+            scan_count += 1
             if msg.media:
                 messages_to_process.append(msg)
+            
+            if len(messages_to_process) >= limit:
+                break
+            
+            if scan_count >= max_scan:
+                break
+                
     except Exception as e:
         error_msg = str(e)
+        from handlers.setup import get_main_menu_keyboard
+        is_adm = message.from_user.id == client.admin_id
+        
+        # Try to delete status message to clean up
+        try: await status_msg.delete()
+        except: pass
+        
         if "PEER_ID_INVALID" in error_msg:
-            await status_msg.edit_text(
+            await message.reply_text(
                 f"❌ 无法访问该对话！\n\n"
                 f"错误: `PEER_ID_INVALID`\n\n"
                 f"**这个 ID ({chat_id}) 在你的账号里找不到。**\n\n"
                 f"可能原因：\n"
                 f"1. 你已经删除了和这个账号的聊天记录\n"
                 f"2. 这个账号从未给你发过消息\n"
-                f"3. 需要先在 Telegram 里打开那个聊天"
+                f"3. 需要先在 Telegram 里打开那个聊天",
+                reply_markup=get_main_menu_keyboard(is_adm)
             )
         else:
-            await status_msg.edit_text(f"❌ 无法访问该频道！\n\n错误: `{e}`")
+            await message.reply_text(f"❌ 无法访问该频道！\n\n错误: `{e}`", reply_markup=get_main_menu_keyboard(is_adm))
         return
     
     if not messages_to_process:
-        await status_msg.edit_text("❌ 未找到包含媒体文件的消息。")
+        from handlers.setup import get_main_menu_keyboard
+        is_adm = message.from_user.id == client.admin_id
+        try: await status_msg.delete()
+        except: pass
+        await message.reply_text(f"❌ 未找到包含媒体文件的消息 (已扫描 {scan_count} 条)。", reply_markup=get_main_menu_keyboard(is_adm))
         return
 
     # Initialize Dashboard
