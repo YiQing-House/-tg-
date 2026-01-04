@@ -125,45 +125,55 @@ sudo systemctl status tgvault
 sudo journalctl -u tgvault -f
 ```
 
-## 8. 宝塔面板 (Baota/aaPanel) 部署指南 (推荐)
+## 8. 宝塔面板 (Baota) 傻瓜式部署指南
 
-如果你使用的是宝塔面板，部署会更简单。
+使用宝塔面板自带的 **Python项目管理器** 插件，无需敲一行命令即可部署。
 
-### 第一步：上传文件
-1. 登录宝塔面板 -> **文件**。
-2. 进入 `/www/wwwroot/` 目录（或者你喜欢的其他目录）。
-3. 点击 **上传** -> 上传 `TelegramVault_Deploy.zip`。
-4. **解压** 压缩包，将文件夹重命名为 `tg_vault` (可选)。
+### 准备工作
+1. 登录宝塔面板。
+2. 进入 **文件**，将本地的 `TelegramVault_Deploy.zip` 上传到 `/www/wwwroot/` 目录。
+3. **解压** 压缩包，将解压后的文件夹重命名为 `tg_vault`。
+   - 确保 `bot.py` 在 `/www/wwwroot/tg_vault/bot.py`。
+   - 确保 `requirements.txt` 和 `.env` 都在此目录。
 
-### 第二步：安装 Python 环境
-1. 打开 **终端** (宝塔面板左侧菜单)。
-2. 进入目录：
-   ```bash
-   cd /www/wwwroot/tg_vault
-   ```
-3. 安装依赖：
-   ```bash
-   pip3 install -r requirements.txt
-   pip3 install python-dotenv
-   ```
-   *(如果提示 pip3 command not found / 找不到命令，请在软件商店安装 "Python项目管理器" 并使用其中的 Python)*
+### 第一步：安装 Python环境
+1. 点击左侧 **软件商店**。
+2. 搜索 `Python`。
+3. 找到 **Python项目管理器 2.0** (或 2.5)，点击 **安装**。
+4. 安装完成后，点击 **设置** (或打开插件)。
+5. 点击 **版本管理** -> 选择 **Python 3.9** (或更高版本) -> 点击 **安装**。等待安装完成。
 
-### 第三步：设置守护进程 (Supervisor)
-为了让机器人一直运行，推荐使用宝塔自带的 **Supervisor管理器**。
-
-1. **软件商店** ->搜索 `Supervisor` -> 安装 **Supervisor管理器**。
-2. 打开 Supervisor管理器 -> **添加守护进程**。
-   - **名称**: `tg_bot` (随意填)
-   - **启动用户**: `root`
-   - **运行目录**: `/www/wwwroot/tg_vault` (选择你的实际目录)
-   - **启动命令**: `python3 bot.py`
-     *(如果你用了虚拟环境，路径可能是 `/www/wwwroot/tg_vault/venv/bin/python bot.py`)*
-   - **进程数量**: 1
+### 第二步：添加项目
+1. 在 Python项目管理器中，点击 **项目管理** -> **添加项目**。
+2. 填写配置：
+   - **项目路径**: 选择 `/www/wwwroot/tg_vault`
+   - **启动文件**: 选择 `bot.py`
+   - **运行端口**: `8080` (如果没有开Web功能可随便填，如 8888)
+   - **Python版本**: 选择刚才安装的 `Python 3.9`
+   - **启动方式**: `python`
+   - **依赖包**: ✅ **勾选 "安装模块依赖"** (它会自动读取 requirements.txt)
+   - **开机启动**: ✅ **勾选**
 3. 点击 **确定**。
-4. 状态显示 **已启动** (绿色) 即成功！
+4. 等待几分钟，它会自动安装依赖并启动项目。
 
-### 第四步：查看日志
-在 Supervisor管理器中，点击 `tg_bot` 右侧的 **日志**，可以看到机器人的运行输出。如果看到 `Telegram Private Vault is running...` 就说明一切正常。
+### 第三步：验证运行
+1. 在项目列表中，看到状态显示 **运行中** (绿色播放键)。
+2. 点击右侧的 **日志**。
+3. 如果看到日志输出：
+   ```
+   Telegram Private Vault is running...
+   ```
+   恭喜你，部署成功！机器人已经在后台运行了。
+
+### 常见报错解决
+- **日志显示 `ModuleNotFoundError`**: 说明依赖没装好。
+  - 点击右侧 **模块** -> 手动输入 `pyrogram` 点击添加。
+  - 再手动输入 `tgcrypto` 点击添加。
+  - 重启项目。
+- **日志显示 `Peer id invalid`**: 说明 session 文件有问题。
+  - 请在 **文件** 管理器中，检查 `vault_bot.session` 是否存在且有文件大小。
+  - 如果文件是 0KB 或不存在，请从本地重新上传。
+
 
 ---
 
