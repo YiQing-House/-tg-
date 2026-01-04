@@ -93,6 +93,11 @@ async def search_chats(client: Client, message: Message):
     from pyrogram.types import ForceReply
     
     args = message.command
+    
+    # 权限检查
+    if message.from_user.id != client.admin_id:
+        return
+
     if len(args) < 2:
         await message.reply_text(
             "🔍 **搜索对话**\n\n"
@@ -108,6 +113,10 @@ async def search_chats(client: Client, message: Message):
 @Client.on_message(filters.reply & filters.private & filters.text)
 async def handle_reply_input(client: Client, message: Message):
     """Handle reply to search/download/newcollection prompts."""
+    # 权限检查
+    if message.from_user.id != client.admin_id:
+        return
+
     if not message.reply_to_message:
         return
     

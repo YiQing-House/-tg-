@@ -11,15 +11,10 @@ def is_admin(client, user_id):
 async def start_handler(client: Client, message: Message):
     """Handle /start command - 管理员专用"""
     # 非管理员直接拒绝，并显示用户 ID 用于调试
+    # 非管理员直接拒绝
     if not is_admin(client, message.from_user.id):
-        await message.reply_text(
-            f"⛔ **此机器人为私人使用**\n\n"
-            f"不对外开放。\n\n"
-            f"---\n"
-            f"**DEBUG**: 你的 ID 是 `{message.from_user.id}`\n"
-            f"配置的 Admin ID 是 `{client.admin_id}`"
-        )
-        return
+        return  # 保持静默，不回复任何信息，防止被探测
+
     
     # === Deep Linking 处理 (例如 /start file_unique_id) ===
     if len(message.command) > 1:
