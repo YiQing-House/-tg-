@@ -147,9 +147,16 @@ async def link_handler(client: Client, message: Message):
     import re
     import os
     import asyncio
-    if re.match(r'^[a-zA-Z0-9]{16,32}$', text):
+    # 清理文本，去除可能的 @username 前缀
+    # 例如用户输入: "@MyBot 1234abcd..."
+    clean_text = re.sub(r'^@\w+\s+', '', text).strip()
+    
+    # 检查是否是提取码 (16-32位字母数字)
+    # 使用 clean_text 进行匹配
+    if re.match(r'^[a-zA-Z0-9]{16,32}$', clean_text):
+        key = clean_text # 使用清理后的 key
         from database import db
-        file_info = db.get_file_by_key(text)
+        file_info = db.get_file_by_key(key)
         if file_info:
             try:
                 # 检查是否加密
@@ -172,14 +179,14 @@ async def link_handler(client: Client, message: Message):
                     # 下载加密文件
                     dl_path = await storage_client.download_media(
                         enc_msg,
-                        file_name=f"temp_enc_{text}.bin"
+                        file_name=f"temp_enc_{key}.bin"
                     )
                     
                     # 解密
                     from services.crypto_utils import decrypt_file
                     import base64
                     
-                    decrypted_path = f"temp_dec_{text}_{file_info['file_name']}"
+                    decrypted_path = f"temp_dec_{key}_{file_info['file_name']}"
                     aes_key = base64.b64decode(file_info["encryption_key"])
                     
                     await asyncio.to_thread(decrypt_file, dl_path, decrypted_path, aes_key)
