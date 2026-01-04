@@ -736,6 +736,163 @@ async def my_collections_cmd(client: Client, message: Message):
     output += "💡 分享密钥给他人，他们直接发送密钥即可获取合集。"
     await message.reply_text(output)
 
+async def send_collection_files(client: Client, message: Message, files: list, collection_name: str, edit_msg=None):
+    """
+    发送合集文件（核心逻辑抽离）
+    :param edit_msg: 如果有现成的消息对象，直接编辑它，否则回复新消息
+    """
+    if edit_msg:
+        status_msg = edit_msg
+        await status_msg.edit_text(f"📁 **{collection_name}**\n准备发送 {len(files)} 个文件...")
+    else:
+        status_msg = await message.reply_text(
+            f"📁 **{collection_name}**\n"
+            f"共 {len(files)} 个文件，正在准备下载与解密..."
+        )
+    
+    from pyrogram.types import InputMediaPhoto, InputMediaVideo
+    import os
+    import asyncio
+    from services.crypto_utils import decrypt_file
+    import base64
+    
+    media_group = []
+    temp_paths = []
+    storage_client = getattr(client, 'storage_client', client)
+    
+    for f in files:
+        try:
+            local_path = None
+            is_video = False
+            is_image = False
+            
+            mime = (f.get('mime_type') or "").lower()
+            fname = (f.get('file_name') or "").lower()
+            if mime.startswith('image') or fname.endswith(('.jpg', '.jpeg', '.png', '.webp', '.heic')):
+                is_image = True
+            elif mime.startswith('video') or fname.endswith(('.mp4', '.mov', '.avi', '.mkv')):
+                is_video = True
+            
+            if f.get('is_encrypted'):
+                enc_msg = await storage_client.get_messages(f["chat_id"], f["message_id"])
+                if not enc_msg: continue
+                
+                try:
+                    dl_path = await storage_client.download_media(enc_msg, file_name=f"temp_col_enc_{f['id']}")
+                    temp_paths.append(dl_path)
+                except: continue
+
+                if not dl_path: continue
+
+                dec_path = f"temp_col_dec_{f['id']}_{f['file_name']}"
+                aes_key = base64.b64decode(f["encryption_key"])
+                
+                try:
+                    await asyncio.to_thread(decrypt_file, dl_path, dec_path, aes_key)
+                    local_path = dec_path
+                    temp_paths.append(dec_path)
+                except: continue
+                    
+            else:
+                msg = await storage_client.get_messages(f["chat_id"], f["message_id"])
+                dl_path = await storage_client.download_media(msg, file_name=f"temp_col_plain_{f['id']}")
+                local_path = dl_path
+                temp_paths.append(local_path)
+            
+            if not local_path or not os.path.exists(local_path):
+                continue
+
+            caption = f['caption'] or ""
+            
+            if is_image:
+                media_group.append(InputMediaPhoto(local_path, caption=caption))
+            elif is_video:
+                media_group.append(InputMediaVideo(local_path, caption=caption))
+            else:
+                if media_group:
+                    await client.send_media_group(message.chat.id, media_group)
+                    media_group = []
+                
+                await client.send_document(message.chat.id, local_path, caption=caption, file_name=f['file_name'])
+
+            if len(media_group) >= 10:
+                await client.send_media_group(message.chat.id, media_group)
+                media_group = []
+        
+        except Exception as e:
+            print(f"Error processing file {f.get('id')}: {e}")
+    
+    if media_group:
+        await client.send_media_group(message.chat.id, media_group)
+        
+    for p in temp_paths:
+        if os.path.exists(p):
+            try: os.remove(p)
+            except: pass
+    
+    await status_msg.edit_text(f"✅ 合集 **{collection_name}** 发送完成！")
+
+async def show_collection_page(client, message, collection, files, page=1, is_callback=False):
+    """显示合集分页菜单"""
+    per_page = 10
+    total_files = len(files)
+    total_pages = max(1, (total_files + per_page - 1) // per_page)
+    
+    # 修正 page 范围
+    if page < 1: page = 1
+    if page > total_pages: page = total_pages
+    
+    start_idx = (page - 1) * per_page
+    end_idx = start_idx + per_page
+    page_files = files[start_idx:end_idx]
+    
+    text = f"📁 **{collection['name']}**\n"
+    text += f"📊 共 {total_files} 个文件 | 第 {page}/{total_pages} 页\n\n"
+    
+    for i, f in enumerate(page_files, start=start_idx+1):
+        fname = f['file_name'] or "未知文件"
+        if len(fname) > 25: fname = fname[:22] + "..."
+        # 图标
+        icon = "📄"
+        mime = (f.get('mime_type') or "").lower()
+        if "image" in mime: icon = "🖼️"
+        elif "video" in mime: icon = "📹"
+        text += f"{i}. {icon} {fname}\n"
+        
+    text += "\n💡 Telegram 限制每次只能发 10 张图，请分批提取。"
+    
+    buttons = []
+    # 按钮1: 发送本页
+    buttons.append([InlineKeyboardButton(
+        f"⬇️ 发送本页 ({len(page_files)}个)", 
+        callback_data=f"col_dl_{collection['access_key']}_{page}"
+    )])
+    
+    # 按钮2: 翻页
+    nav = []
+    if page > 1:
+        nav.append(InlineKeyboardButton("⬅️ 上一页", callback_data=f"col_pg_{collection['access_key']}_{page-1}"))
+    if page < total_pages:
+        nav.append(InlineKeyboardButton("下一页 ➡️", callback_data=f"col_pg_{collection['access_key']}_{page+1}"))
+    if nav:
+        buttons.append(nav)
+        
+    # 按钮3: 发送全部
+    buttons.append([InlineKeyboardButton(
+        f"🚀 发送全部 ({total_files}个 - 慎点)", 
+        callback_data=f"col_all_{collection['access_key']}"
+    )])
+    
+    keyboard = InlineKeyboardMarkup(buttons)
+    
+    try:
+        if is_callback:
+            await message.edit_text(text, reply_markup=keyboard)
+        else:
+            await message.reply_text(text, reply_markup=keyboard)
+    except: pass
+
+
 async def handle_collection_key(client: Client, message: Message, key: str):
     """通过密钥获取合集文件"""
     from database import db
@@ -749,107 +906,12 @@ async def handle_collection_key(client: Client, message: Message, key: str):
             await message.reply_text(f"📁 合集 **{collection['name']}** 还没有文件。")
             return True
         
-        status_msg = await message.reply_text(
-            f"📁 **{collection['name']}**\n"
-            f"共 {len(files)} 个文件，正在准备下载与解密..."
-        )
-        
-        from pyrogram.types import InputMediaPhoto, InputMediaVideo
-        import os
-        import asyncio
-        from services.crypto_utils import decrypt_file
-        import base64
-        
-        media_group = []
-        temp_paths = []
-        storage_client = getattr(client, 'storage_client', client) # Fallback to client if storage_client missing
-        
-        for f in files:
-            try:
-                local_path = None
-                is_video = False
-                is_image = False
-                
-                mime = (f.get('mime_type') or "").lower()
-                fname = (f.get('file_name') or "").lower()
-                if mime.startswith('image') or fname.endswith(('.jpg', '.jpeg', '.png', '.webp', '.heic')):
-                    is_image = True
-                elif mime.startswith('video') or fname.endswith(('.mp4', '.mov', '.avi', '.mkv')):
-                    is_video = True
-                
-                # 如果是加密文件或需要作为媒体发送，先下载
-                # 对于加密文件，必须下载解密
-                # 对于非加密媒体，为了确保能作为 InputMedia 发送(特别是原文件是Document时)，建议下载
-                
-                if f.get('is_encrypted'):
-                    enc_msg = await storage_client.get_messages(f["chat_id"], f["message_id"])
-                    if not enc_msg: continue
-                    
-                    try:
-                        dl_path = await storage_client.download_media(enc_msg, file_name=f"temp_col_enc_{f['id']}")
-                        temp_paths.append(dl_path)
-                    except Exception as e:
-                        print(f"Download failed: {e}")
-                        continue
-
-                    if not dl_path: continue
-
-                    dec_path = f"temp_col_dec_{f['id']}_{f['file_name']}"
-                    aes_key = base64.b64decode(f["encryption_key"])
-                    
-                    try:
-                        await asyncio.to_thread(decrypt_file, dl_path, dec_path, aes_key)
-                        local_path = dec_path
-                        temp_paths.append(dec_path)
-                    except Exception as e:
-                        print(f"Decryption failed: {e}")
-                        await message.reply_text(f"❌ 解密失败: {f['file_name']}")
-                        continue
-                        
-                else:
-                    # 非加密，但也下载以确保相册体验
-                    msg = await storage_client.get_messages(f["chat_id"], f["message_id"])
-                    dl_path = await storage_client.download_media(msg, file_name=f"temp_col_plain_{f['id']}")
-                    local_path = dl_path
-                    temp_paths.append(local_path)
-                
-                if not local_path or not os.path.exists(local_path):
-                    continue
-
-                caption = f['caption'] or ""
-                
-                if is_image:
-                    media_group.append(InputMediaPhoto(local_path, caption=caption))
-                elif is_video:
-                    media_group.append(InputMediaVideo(local_path, caption=caption))
-                else:
-                    # 其他文件，清空现有媒体组后单独发送
-                    if media_group:
-                        await client.send_media_group(message.chat.id, media_group)
-                        media_group = []
-                    
-                    await client.send_document(message.chat.id, local_path, caption=caption, file_name=f['file_name'])
-
-                # 满10个发送一组
-                if len(media_group) >= 10:
-                    await client.send_media_group(message.chat.id, media_group)
-                    media_group = []
-            
-            except Exception as e:
-                print(f"Error processing file {f.get('id')}: {e}")
-                # 即使出错也继续处理下一个
-        
-        # 发送剩余媒体
-        if media_group:
-            await client.send_media_group(message.chat.id, media_group)
-            
-        # 清理临时文件
-        for p in temp_paths:
-            if os.path.exists(p):
-                try: os.remove(p)
-                except: pass
-        
-        await status_msg.edit_text(f"✅ 合集 **{collection['name']}** 发送完成！")
+        # 超过10个，显示分页菜单
+        if len(files) > 10:
+            await show_collection_page(client, message, collection, files, 1)
+        else:
+            # <= 10个，直接发送
+            await send_collection_files(client, message, files, collection['name'])
         return True
 
     # === 情景2: 是单个文件密钥 ===
@@ -1240,4 +1302,39 @@ async def pending_collection_name_handler(client: Client, message: Message):
         )
     else:
         await message.reply_text("❌ 创建合集失败")
+
+# ========== 分页回调 ==========
+
+@Client.on_callback_query(filters.regex(r"^col_(pg|dl|all)_"))
+async def collection_pagination_callback(client: Client, callback: CallbackQuery):
+    from database import db
+    parts = callback.data.split("_")
+    action = parts[1]
+    access_key = parts[2]
+    
+    collection = db.get_collection_by_key(access_key)
+    if not collection:
+        await callback.answer("合集不存在或密钥已失效", show_alert=True)
+        return
+        
+    files = db.get_collection_files(collection["id"])
+    
+    if action == "pg":
+        page = int(parts[3])
+        await show_collection_page(client, callback.message, collection, files, page, is_callback=True)
+        await callback.answer()
+        
+    elif action == "dl":
+        page = int(parts[3])
+        per_page = 10
+        start_idx = (page - 1) * per_page
+        end_idx = start_idx + per_page
+        page_files = files[start_idx:end_idx]
+        
+        await callback.answer("开始发送...", show_alert=False)
+        await send_collection_files(client, callback.message, page_files, f"{collection['name']} (第{page}页)", edit_msg=None)
+        
+    elif action == "all":
+        await callback.answer("开始全部发送...", show_alert=True)
+        await send_collection_files(client, callback.message, files, collection['name'], edit_msg=None)
 
